@@ -1,5 +1,6 @@
 import tensorflow as tf
 from volatility.discrete import ImpliedVolSurface, DupireLocalVol
+from common import USE_XLA
 
 class MCAmericanOption:
     """Optimized LSM Monte Carlo pricer for American options with pathwise Greeks using GradientTape."""
@@ -13,8 +14,11 @@ class MCAmericanOption:
         seed=0
     ):
         if antithetic:
-            tf.debugging.assert_equal(n_paths % 2, 0, message="n_paths must be even")
-            tf.debugging.assert_equal(n_steps % 2, 0, message="n_steps must be even")
+            tf.debugging.assert_equal(
+                n_paths % 2,
+                0,
+                message="n_paths must be even when antithetic sampling is active",
+            )
 
         # parameters
         self.S0 = tf.Variable(S0, dtype=dtype, trainable=True)
@@ -57,7 +61,7 @@ class MCAmericanOption:
 
         raise TypeError("vol_model must be float/int or DupireLocalVol")
 
-    @tf.function
+    @tf.function(jit_compile=USE_XLA)
     def price_and_grads(self):
         # generate paths and price under one tape for gradients
         with tf.GradientTape(persistent=True) as tape:
