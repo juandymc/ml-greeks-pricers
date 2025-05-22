@@ -1,6 +1,6 @@
 import tensorflow as tf
 from volatility.discrete import ImpliedVolSurface, DupireLocalVol
-from common import USE_XLA
+from common.constants import USE_XLA
 
 class MCAmericanOption:
     """Optimized LSM Monte Carlo pricer for American options with pathwise Greeks using GradientTape."""
