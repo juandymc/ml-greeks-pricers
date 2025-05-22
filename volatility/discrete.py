@@ -42,8 +42,8 @@ class DupireLocalVol(ImpliedVolSurface):
         self.S0 = tf.convert_to_tensor(S0, dtype=dtype)
         self.r  = tf.convert_to_tensor(r,  dtype=dtype)
         self.q  = tf.convert_to_tensor(q,  dtype=dtype)
-        # calculamos la local vol y la guardamos en self.surface,
-        # pero también la sobreescribimos en self.grid para futura interpolación
+        # compute the local volatility and store it in ``self.surface``,
+        # but also override ``self.grid`` for future interpolation
         self.surface = self._compute_surface()
         self.grid    = self.surface
 
@@ -54,7 +54,7 @@ class DupireLocalVol(ImpliedVolSurface):
         Tg, Kg           = tf.meshgrid(mats, strikes, indexing='ij')
         Tf = tf.reshape(Tg, [-1]);   Kf = tf.reshape(Kg, [-1])
 
-        # constantes tipadas para el CDF
+        # typed constants for the CDF
         dt_scalar = strikes.dtype
         half  = tf.constant(0.5, dt_scalar)
         one   = tf.constant(1.0, dt_scalar)
@@ -62,7 +62,7 @@ class DupireLocalVol(ImpliedVolSurface):
 
         def price_fn():
             sigma_flat = ImpliedVolSurface.bilinear(Tf, Kf, iv, strikes, mats)
-            # construimos tensores broadcast-ready:
+            # build broadcast-ready tensors:
             return bs_price(
                 S     = S0 * tf.ones_like(Kf),
                 K     = Kf,
@@ -75,7 +75,7 @@ class DupireLocalVol(ImpliedVolSurface):
             )
 
         C   = price_fn()
-        # derivadas de primer y segundo orden via GradientTape:
+        # first- and second-order derivatives via ``GradientTape``:
         C_T  = tf.gradients(C, Tf)[0]
         C_K  = tf.gradients(C, Kf)[0]
         C_KK = tf.gradients(C_K, Kf)[0]
