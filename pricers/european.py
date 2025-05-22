@@ -3,7 +3,7 @@ from volatility.discrete import ImpliedVolSurface, DupireLocalVol
 import tensorflow as tf
 tf.keras.backend.set_floatx('float64')
 
-USE_XLA = bool(tf.config.list_physical_devices('GPU'))
+from common import USE_XLA
 
 class AnalyticalEuropeanOption:
     def __init__(
@@ -121,13 +121,11 @@ class AnalyticalEuropeanOption:
     __call__ = price
 # Helper to enforce even numbers for antithetic sampling
 def _assert_even(n, name):
-    tf.debugging.assert_equal(n % 2, 0,
-        message=f"{name} must be even when antithetic sampling is active")
-
-# Helper to enforce even numbers for antithetic sampling
-def _assert_even(n, name):
-    tf.debugging.assert_equal(n % 2, 0,
-        message=f"{name} must be even when antithetic sampling is active")
+    tf.debugging.assert_equal(
+        n % 2,
+        0,
+        message=f"{name} must be even when antithetic sampling is active",
+    )
 
 class MCEuropeanOption:
     """
@@ -185,7 +183,7 @@ class MCEuropeanOption:
 
         raise TypeError("vol_model must be float/int or DupireLocalVol")
 
-    @tf.function(jit_compile=True)
+    @tf.function(jit_compile=USE_XLA)
     def _brownian(self):
         M, N = self.n_steps, self.n_paths
         dt  = self.T / tf.cast(M, self.dtype)
@@ -196,7 +194,7 @@ class MCEuropeanOption:
             Z = tf.concat([Z, -Z], axis=1)
         return Z * sd
 
-    @tf.function(jit_compile=True)
+    @tf.function(jit_compile=USE_XLA)
     def _compute_price_and_grads(self):
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(self.S0)
@@ -248,7 +246,7 @@ class MCEuropeanOption:
             _ = self.__call__()
         return self._last_delta
 
-    @tf.function(jit_compile=True)
+    @tf.function(jit_compile=USE_XLA)
     def vega_bucket(self):
         if self._dupire_grid is None:
             raise ValueError("bucket-vega only available with DupireLocalVol")
