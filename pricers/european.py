@@ -137,7 +137,7 @@ class MCEuropeanOption:
     """
     def __init__(self, S0, K, T, r, q, vol_model, *,
                  is_call=False, n_paths=100_000, n_steps=60,
-                 antithetic=True, whitening=True, seed=0, dtype=tf.float64):
+                 antithetic=True, seed=0, dtype=tf.float64):
         if antithetic:
             _assert_even(n_paths, 'n_paths')
             _assert_even(n_steps, 'n_steps')
@@ -152,7 +152,6 @@ class MCEuropeanOption:
         self.n_paths    = n_paths
         self.n_steps    = n_steps
         self.antithetic = antithetic
-        self.whitening  = whitening
         self.seed       = seed
         self.dtype      = dtype
 
@@ -189,12 +188,8 @@ class MCEuropeanOption:
         M, N = self.n_steps, self.n_paths
         dt  = self.T / tf.cast(M, self.dtype)
         sd  = tf.sqrt(dt)
-        Z = tf.random.stateless_normal([M, N//(2 if self.antithetic else 1)],
+        Z = tf.random.stateless_normal([M, N // (2 if self.antithetic else 1)],
                                        [self.seed, 0], dtype=self.dtype)
-        if self.whitening and self.antithetic:
-            C = tf.matmul(Z, Z, transpose_b=True) / tf.cast(tf.shape(Z)[1], self.dtype)
-            e, v = tf.linalg.eigh(C)
-            Z = tf.matmul(v, tf.matmul(tf.linalg.diag(tf.math.rsqrt(e)), tf.matmul(v, Z)))
         if self.antithetic:
             Z = tf.concat([Z, -Z], axis=1)
         return Z * sd
