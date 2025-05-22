@@ -131,13 +131,15 @@ def _assert_even(n, name):
 
 class MCEuropeanOption:
     """
-    Monte Carlo para opción europea con cálculo simultáneo de precio, Delta y Vega.
-    • vol_model float/int → volatilidad plana (cerrado en un paso)
-    • vol_model DupireLocalVol → volatilidad local (Euler iterativo solo S_T)
+    Monte Carlo pricer for European options computing price, Delta and Vega at
+    the same time.
+    - ``vol_model`` float/int → flat volatility (single-step closed form)
+    - ``vol_model`` :class:`DupireLocalVol` → local volatility (Euler scheme for
+      ``S_T`` only)
     """
     def __init__(self, S0, K, T, r, q, vol_model, *,
                  is_call=False, n_paths=100_000, n_steps=60,
-                 antithetic=True, whitening=True, seed=0, dtype=tf.float64):
+                 antithetic=True, seed=0, dtype=tf.float64):
         if antithetic:
             _assert_even(n_paths, 'n_paths')
             _assert_even(n_steps, 'n_steps')
@@ -152,7 +154,6 @@ class MCEuropeanOption:
         self.n_paths    = n_paths
         self.n_steps    = n_steps
         self.antithetic = antithetic
-        self.whitening  = whitening
         self.seed       = seed
         self.dtype      = dtype
 
@@ -182,7 +183,7 @@ class MCEuropeanOption:
                 return ImpliedVolSurface.bilinear(t, spot, grid, strikes, mats)
             return local_sigma
 
-        raise TypeError("vol_model debe ser float/int o DupireLocalVol")
+        raise TypeError("vol_model must be float/int or DupireLocalVol")
 
     @tf.function(jit_compile=True)
     def _brownian(self):
@@ -191,10 +192,6 @@ class MCEuropeanOption:
         sd  = tf.sqrt(dt)
         Z = tf.random.stateless_normal([M, N//(2 if self.antithetic else 1)],
                                        [self.seed, 0], dtype=self.dtype)
-        if self.whitening and self.antithetic:
-            C = tf.matmul(Z, Z, transpose_b=True) / tf.cast(tf.shape(Z)[1], self.dtype)
-            e, v = tf.linalg.eigh(C)
-            Z = tf.matmul(v, tf.matmul(tf.linalg.diag(tf.math.rsqrt(e)), tf.matmul(v, Z)))
         if self.antithetic:
             Z = tf.concat([Z, -Z], axis=1)
         return Z * sd
@@ -208,7 +205,7 @@ class MCEuropeanOption:
             elif self._dupire_grid is not None:
                 tape.watch(self._dupire_grid)
 
-            # simulación y payoff
+            # simulate the paths and compute the payoff
             if self._flat_sigma is not None:
                 sigma = self._flat_sigma
                 Z = tf.random.stateless_normal([self.n_paths], [self.seed, 0], dtype=self.dtype)
@@ -218,7 +215,7 @@ class MCEuropeanOption:
                 dW    = self._brownian()
                 times = tf.range(self.n_steps, dtype=self.dtype) * dt
                 S     = tf.fill([self.n_paths], self.S0)
-                # solo S_T con foldl para no guardar full path
+                # keep only S_T using ``foldl`` to avoid storing the full path
                 def step(prev, elems):
                     dWi, tc = elems
                     sig = self._sigma_fn(tf.stack([tf.fill([self.n_paths], tc), prev], axis=1))
@@ -254,7 +251,7 @@ class MCEuropeanOption:
     @tf.function(jit_compile=True)
     def vega_bucket(self):
         if self._dupire_grid is None:
-            raise ValueError("bucket-vega sólo disponible con DupireLocalVol")
+            raise ValueError("bucket-vega only available with DupireLocalVol")
         with tf.GradientTape() as tape:
             price = self.__call__()
         return tape.gradient(price, self._dupire_grid)
