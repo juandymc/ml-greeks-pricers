@@ -3,7 +3,7 @@ from pricers.black_utils import bs_price
 import tensorflow as tf
 tf.keras.backend.set_floatx('float64')
 
-from common import USE_XLA
+from common.constants import USE_XLA
 class ImpliedVolSurface:
     def __init__(self, strikes, maturities, implied_vol_surface, t0=None, dtype=tf.float64):
         self.strikes    = tf.convert_to_tensor(strikes,             dtype=dtype)

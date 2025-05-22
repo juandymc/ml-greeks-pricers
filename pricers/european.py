@@ -3,7 +3,7 @@ from volatility.discrete import ImpliedVolSurface, DupireLocalVol
 import tensorflow as tf
 tf.keras.backend.set_floatx('float64')
 
-from common import USE_XLA
+from common.constants import USE_XLA
 
 class AnalyticalEuropeanOption:
     def __init__(
