@@ -134,10 +134,13 @@ class MCEuropeanOption:
     - ``vol_model`` float/int → flat volatility (single-step closed form)
     - ``vol_model`` :class:`DupireLocalVol` → local volatility (Euler scheme for
       ``S_T`` only)
+    - ``use_scan`` use ``tf.scan`` instead of ``tf.foldl`` when simulating paths
+      under local volatility
     """
     def __init__(self, S0, K, T, r, q, vol_model, *,
                  is_call=False, n_paths=100_000, n_steps=60,
-                 antithetic=True, seed=0, dtype=tf.float64):
+                 antithetic=True, seed=0, dtype=tf.float64,
+                 use_scan=False):
         if antithetic:
             _assert_even(n_paths, 'n_paths')
             _assert_even(n_steps, 'n_steps')
@@ -154,6 +157,7 @@ class MCEuropeanOption:
         self.antithetic = antithetic
         self.seed       = seed
         self.dtype      = dtype
+        self.use_scan   = use_scan
 
         self._flat_sigma  = None
         self._dupire_grid = None
@@ -213,12 +217,17 @@ class MCEuropeanOption:
                 dW    = self._brownian()
                 times = tf.range(self.n_steps, dtype=self.dtype) * dt
                 S     = tf.fill([self.n_paths], self.S0)
-                # keep only S_T using ``foldl`` to avoid storing the full path
                 def step(prev, elems):
                     dWi, tc = elems
-                    sig = self._sigma_fn(tf.stack([tf.fill([self.n_paths], tc), prev], axis=1))
+                    sig = self._sigma_fn(
+                        tf.stack([tf.fill([self.n_paths], tc), prev], axis=1)
+                    )
                     return prev * tf.exp((self.r - 0.5 * sig**2) * dt + sig * dWi)
-                ST = tf.foldl(step, (dW, times), initializer=S)
+                if self.use_scan:
+                    path = tf.scan(step, (dW, times), initializer=S)
+                    ST = path[-1]
+                else:
+                    ST = tf.foldl(step, (dW, times), initializer=S)
 
             payoff = tf.where(self.is_call,
                               tf.nn.relu(ST - self.K),
