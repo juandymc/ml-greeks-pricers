@@ -1,6 +1,7 @@
 import tensorflow as tf
 from volatility.discrete import ImpliedVolSurface, DupireLocalVol
 from common.constants import USE_XLA
+from common.random_cache import mc_noise
 
 class MCAmericanOption:
     """Optimized LSM Monte Carlo pricer for American options with pathwise Greeks using GradientTape."""
@@ -33,7 +34,7 @@ class MCAmericanOption:
         self.dtype = dtype
         self._dt = self.T / tf.cast(n_steps, dtype)
         self._times = tf.cast(tf.range(n_steps), dtype) * self._dt
-        self._rng = tf.random.Generator.from_seed(seed)
+        self.seed = seed
         self._I3 = tf.eye(3, dtype=dtype)
 
         # volatility
@@ -72,9 +73,7 @@ class MCAmericanOption:
                 tape.watch(self._dupire_grid)
 
             # simulate Brownian increments
-            half = self.n_paths // 2
-            Z = self._rng.normal([self.n_steps, half], dtype=self.dtype)
-            Z = tf.concat([Z, -Z], axis=1) if self.antithetic else Z
+            Z = mc_noise(self.n_steps, self.n_paths, self.seed, antithetic=self.antithetic, dtype=self.dtype)
             dW = Z * tf.sqrt(self._dt)
 
             # simulate asset paths
