@@ -196,7 +196,7 @@ class MCEuropeanOption:
         Z = mc_noise(M, N, self.seed, antithetic=self.antithetic, dtype=self.dtype)
         return Z * sd
 
-    @tf.function(jit_compile=False)
+    @tf.function(jit_compile=USE_XLA)
     def _compute_price_and_grads(self):
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(self.S0)

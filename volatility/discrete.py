@@ -16,13 +16,27 @@ class ImpliedVolSurface:
     @tf.function(jit_compile=USE_XLA)
     def bilinear(t, k, grid, strikes, maturities):
         dt = strikes.dtype
-        t = tf.cast(t, dt); k = tf.cast(k, dt)
-        Nm = tf.shape(maturities)[0]; Nk = tf.shape(strikes)[0]
-        it = tf.clip_by_value(tf.searchsorted(maturities, t, 'right') - 1, 0, Nm - 2)
-        ik = tf.clip_by_value(tf.searchsorted(strikes,    k, 'right') - 1, 0, Nk - 2)
-        t0 = tf.gather(maturities, it);   t1 = tf.gather(maturities, it + 1)
-        k0 = tf.gather(strikes,    ik);   k1 = tf.gather(strikes,    ik + 1)
-        wt = (t - t0) / (t1 - t0);         wk = (k - k0) / (k1 - k0)
+        t = tf.cast(t, dt)
+        k = tf.cast(k, dt)
+        strikes = tf.cast(strikes, dt)
+        maturities = tf.cast(maturities, dt)
+
+        def _search_indices(x, vec):
+            """Vectorised searchsorted replacement compatible with XLA."""
+            cond = tf.cast(x[..., None] >= vec[None, :], tf.int32)
+            idx = tf.reduce_sum(cond, axis=-1) - 1
+            return tf.clip_by_value(idx, 0, tf.shape(vec)[0] - 2)
+
+        it = _search_indices(t, maturities)
+        ik = _search_indices(k, strikes)
+
+        t0 = tf.gather(maturities, it)
+        t1 = tf.gather(maturities, it + 1)
+        k0 = tf.gather(strikes, ik)
+        k1 = tf.gather(strikes, ik + 1)
+
+        wt = (t - t0) / (t1 - t0)
+        wk = (k - k0) / (k1 - k0)
         idx00 = tf.stack([it,     ik    ], axis=-1)
         idx10 = tf.stack([it + 1, ik    ], axis=-1)
         idx01 = tf.stack([it,     ik + 1], axis=-1)
