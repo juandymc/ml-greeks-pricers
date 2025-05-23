@@ -198,7 +198,7 @@ class MCEuropeanOption:
             Z = tf.concat([Z, -Z], axis=1)
         return Z * sd
 
-    @tf.function(jit_compile=USE_XLA)
+    @tf.function(jit_compile=False)
     def _compute_price_and_grads(self):
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(self.S0)
