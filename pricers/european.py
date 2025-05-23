@@ -4,6 +4,7 @@ import tensorflow as tf
 tf.keras.backend.set_floatx('float64')
 
 from common.constants import USE_XLA
+from common.random_cache import mc_noise
 
 class AnalyticalEuropeanOption:
     def __init__(
@@ -192,10 +193,7 @@ class MCEuropeanOption:
         M, N = self.n_steps, self.n_paths
         dt  = self.T / tf.cast(M, self.dtype)
         sd  = tf.sqrt(dt)
-        Z = tf.random.stateless_normal([M, N//(2 if self.antithetic else 1)],
-                                       [self.seed, 0], dtype=self.dtype)
-        if self.antithetic:
-            Z = tf.concat([Z, -Z], axis=1)
+        Z = mc_noise(M, N, self.seed, antithetic=self.antithetic, dtype=self.dtype)
         return Z * sd
 
     @tf.function(jit_compile=False)
@@ -210,7 +208,7 @@ class MCEuropeanOption:
             # simulate the paths and compute the payoff
             if self._flat_sigma is not None:
                 sigma = self._flat_sigma
-                Z = tf.random.stateless_normal([self.n_paths], [self.seed, 0], dtype=self.dtype)
+                Z = mc_noise(1, self.n_paths, self.seed, antithetic=self.antithetic, dtype=self.dtype)
                 ST = self.S0 * tf.exp((self.r - 0.5 * sigma**2) * self.T + sigma * tf.sqrt(self.T) * Z)
             else:
                 dt    = self.T / tf.cast(self.n_steps, self.dtype)
