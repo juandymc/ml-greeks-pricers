@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# pyproject.toml — full, copy-and-paste ready
+# ─────────────────────────────────────────────────────────────────────────────
+
+[build-system]
+requires = [
+  "setuptools>=61",
+  "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "ml-greeks-pricers"
+version         = "0.0.1"
+description     = "Greeks pricing utilities with a minimal ML stack"
+readme          = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Juan Diomedes Morales", email = "juandymorales432@gmail.com" }
+]
+
+# ── Runtime dependencies ────────────────────────────────────────────────────
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "tensorflow>=2.16",
+  "QuantLib>=1.32"
+]
+
+# ── Optional extras (install with `pip install -e .[dev]`) ──────────────────
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "black>=24.4",
+  "ruff>=0.4"
+]
+
+# ── Explicit package list for setuptools (avoids discovery issues) ─────────
+[tool.setuptools]
+packages = ["ml_greeks_pricers"]
