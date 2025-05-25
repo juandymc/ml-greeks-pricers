@@ -18,8 +18,11 @@ class AmericanAsset(EuropeanAsset):
     def simulate(self, T, market: MarketData, *, use_cache=True) -> tf.Tensor:
         """Return the full simulated path up to maturity ``T``."""
 
-        T_val = float(tf.get_static_value(T))
-        steps = int(round(T_val / float(tf.get_static_value(self.dt))))
+        # ``self.n_steps`` already stores the integer number of steps derived
+        # from ``T`` and ``dt`` at construction time.  Using it directly avoids
+        # calling ``tf.get_static_value`` on symbolic tensors, which fails when
+        # ``simulate`` is invoked from a ``tf.function``.
+        steps = self.n_steps
 
         if use_cache and self._cache_valid and steps <= self._cached_steps:
             if steps == 0:
