@@ -21,6 +21,7 @@ if __name__ == '__main__':
     n_paths = 50_000
     n_steps = 100
     S0,K,T,r,q = 110.,90.,0.5,0.06,0.
+    dt = T/n_steps
     iv_vol = 0.212
     analEur = AnalyticalEuropeanOption(S0, K, T, 0, r, q, iv_vol, is_call=False)
     analytical_price = analEur().numpy()
@@ -30,8 +31,9 @@ if __name__ == '__main__':
     asset_flat = EuropeanAsset(
         S0,
         q,
+        T=T,
+        dt=dt,
         n_paths=n_paths,
-        n_steps=n_steps,
         use_scan=True,
         seed=0,
     )
@@ -60,8 +62,9 @@ if __name__ == '__main__':
     asset_dup = EuropeanAsset(
         S0,
         q,
+        T=T,
+        dt=dt,
         n_paths=n_paths,
-        n_steps=n_steps,
         use_scan=True,
         seed=0,
     )

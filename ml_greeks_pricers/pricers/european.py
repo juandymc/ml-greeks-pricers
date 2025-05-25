@@ -177,31 +177,66 @@ class EuropeanAsset:
         S0,
         q,
         *,
+        T,
+        dt,
         n_paths=100_000,
-        n_steps=60,
         antithetic=True,
         seed=0,
         dtype=tf.float64,
         use_scan=False,
     ):
+        """Create a new asset simulator.
+
+        Parameters
+        ----------
+        S0, q : float
+            Spot and dividend yield.
+        T : float
+            Maximum horizon for cached simulations.
+        dt : float
+            Time step used for the discretisation. ``n_steps`` is derived from
+            ``T`` and ``dt`` as ``int(round(T / dt))``.
+        n_paths : int, optional
+            Number of Monte Carlo paths.
+        antithetic : bool, optional
+            Use antithetic sampling.
+        seed : int, optional
+            PRNG seed.
+        dtype : tf.DType, optional
+            Floating point precision.
+        use_scan : bool, optional
+            Whether to use ``tf.scan`` instead of ``tf.foldl`` for path
+            generation.
+        """
+
         if antithetic:
             _assert_even(n_paths, "n_paths")
-            _assert_even(n_steps, "n_steps")
+
+        # derive number of steps from dt and ensure dt divides T exactly
+        self.n_steps = int(round(float(T) / float(dt)))
+        if antithetic:
+            _assert_even(self.n_steps, "n_steps")
 
         self.S0 = tf.constant(S0, dtype=dtype)
         self.q = tf.constant(q, dtype=dtype)
         self.n_paths = n_paths
-        self.n_steps = n_steps
+        self.dt = tf.constant(float(T) / self.n_steps, dtype=dtype)
+        self.T = tf.constant(T, dtype=dtype)
         self.antithetic = antithetic
         self.seed = seed
         self.dtype = dtype
         self.use_scan = use_scan
 
+        # cache for simulated paths
+        self._cached_paths = None
+        self._cached_T = None
+        self._cached_market = None
+
     @tf.function(jit_compile=True, reduce_retracing=True)
-    def _brownian(self, T):
-        M = self.n_steps
-        dt = T / tf.cast(M, self.dtype)
-        sd = tf.sqrt(dt)
+    def _brownian(self, n_steps):
+        """Generate Brownian increments for ``n_steps`` using cached ``dt``."""
+        M = tf.cast(n_steps, tf.int32)
+        sd = tf.sqrt(self.dt)
         Z = tf.random.stateless_normal(
             [M, self.n_paths // (2 if self.antithetic else 1)],
             [self.seed, 0],
@@ -211,38 +246,63 @@ class EuropeanAsset:
             Z = tf.concat([Z, -Z], axis=1)
         return Z * sd
 
-    def simulate(self, T, market: MarketData):
-        """Return the asset price at maturity ``T``."""
-        if market._flat_sigma is not None:
-            sigma = market._flat_sigma
-            Z = tf.random.stateless_normal([self.n_paths], [self.seed, 0], dtype=self.dtype)
-            return self.S0 * tf.exp((market.r - self.q - 0.5 * sigma ** 2) * T + sigma * tf.sqrt(T) * Z)
+    def simulate(self, T, market: MarketData, *, use_cache=True):
+        """Return the asset price at maturity ``T``.
 
-        dt = T / tf.cast(self.n_steps, self.dtype)
-        dW = self._brownian(T)
-        times = tf.range(self.n_steps, dtype=self.dtype) * dt
+        When ``use_cache`` is ``True`` and a longer path for the same market has
+        already been simulated, the relevant slice of the cached path is
+        returned instead of generating a new simulation.
+        """
+
+        T_val = float(tf.get_static_value(T))
+        steps = int(round(T_val / float(tf.get_static_value(self.dt))))
+
+        if (
+            use_cache
+            and self._cached_paths is not None
+            and market is self._cached_market
+            and T_val <= self._cached_T + 1e-12
+        ):
+            if steps == 0:
+                return tf.fill([self.n_paths], self.S0)
+            return self._cached_paths[steps - 1]
+
+        # generate a fresh path
+        dW = self._brownian(steps)
+        times = tf.range(steps, dtype=self.dtype) * self.dt
         S = tf.fill([self.n_paths], self.S0)
 
         def step(prev, elems):
             dWi, tc = elems
-            sig = market._sigma_fn(tf.stack([tf.fill([self.n_paths], tc), prev], axis=1))
-            return prev * tf.exp((market.r - self.q - 0.5 * sig ** 2) * dt + sig * dWi)
+            if market._flat_sigma is not None:
+                sig = tf.fill([self.n_paths], market._flat_sigma)
+            else:
+                sig = market._sigma_fn(
+                    tf.stack([tf.fill([self.n_paths], tc), prev], axis=1)
+                )
+            return prev * tf.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dWi)
 
         if self.use_scan:
             path = tf.scan(step, (dW, times), initializer=S)
-            return path[-1]
+        else:
+            path = tf.foldl(step, (dW, times), initializer=S)
 
-        return tf.foldl(step, (dW, times), initializer=S)
+        self._cached_paths = path
+        self._cached_T = T_val
+        self._cached_market = market
+
+        return path[-1]
 
 class MCEuropeanOption:
     """Monte Carlo pricer for European options."""
 
-    def __init__(self, asset: EuropeanAsset, market: MarketData, K, T, *, is_call=False):
+    def __init__(self, asset: EuropeanAsset, market: MarketData, K, T, *, is_call=False, use_cache=True):
         self.asset = asset
         self.market = market
         self.K = tf.constant(K, dtype=asset.dtype)
         self.T = tf.constant(T, dtype=asset.dtype)
         self.is_call = is_call
+        self.use_cache = use_cache
 
         self._last_price = None
         self._last_delta = None
@@ -257,7 +317,7 @@ class MCEuropeanOption:
             elif self.market._dupire_grid is not None:
                 tape.watch(self.market._dupire_grid)
 
-            ST = self.asset.simulate(self.T, self.market)
+            ST = self.asset.simulate(self.T, self.market, use_cache=self.use_cache)
             payoff = tf.where(self.is_call, tf.nn.relu(ST - self.K), tf.nn.relu(self.K - ST))
             price = self.market.discount_factor(self.T) * tf.reduce_mean(payoff)
 
