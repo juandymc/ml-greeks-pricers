@@ -8,7 +8,12 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'   # suprime avisos de backend C++
 tf.get_logger().setLevel('ERROR')          # suprime avisos Python de TF
 
 
-from ml_greeks_pricers.pricers.european import AnalyticalEuropeanOption, MCEuropeanOption
+from ml_greeks_pricers.pricers.european import (
+    AnalyticalEuropeanOption,
+    MCEuropeanOption,
+    MarketData,
+    EuropeanAsset,
+)
 from ml_greeks_pricers.volatility.discrete import ImpliedVolSurface, DupireLocalVol
 
 
@@ -21,7 +26,16 @@ if __name__ == '__main__':
     analytical_price = analEur().numpy()
     tf.print('analytical', analytical_price, analEur.delta(), analEur.vega())
     # ---- volatilidad constante ---------------------------------------
-    mc_flat = MCEuropeanOption(S0,K,T,r,q,iv_vol, n_paths=n_paths, n_steps=n_steps, use_scan=True, seed=0)
+    market_flat = MarketData(r, iv_vol)
+    asset_flat = EuropeanAsset(
+        S0,
+        q,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        use_scan=True,
+        seed=0,
+    )
+    mc_flat = MCEuropeanOption(asset_flat, market_flat, K, T, is_call=False)
     flat_price = mc_flat().numpy()
     tf.print('flat', flat_price, mc_flat.delta(), mc_flat.vega())
 
@@ -42,7 +56,16 @@ if __name__ == '__main__':
     ]
     dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
 
-    mc_loc = MCEuropeanOption(S0,K,T,r,q,dup,n_paths=n_paths, n_steps=n_steps, use_scan=True, seed=0)
+    market_dup = MarketData(r, dup)
+    asset_dup = EuropeanAsset(
+        S0,
+        q,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        use_scan=True,
+        seed=0,
+    )
+    mc_loc = MCEuropeanOption(asset_dup, market_dup, K, T, is_call=False)
     dupire_price = mc_loc().numpy()
     tf.print('dupire', dupire_price, mc_loc.delta(), mc_loc.vega())
 

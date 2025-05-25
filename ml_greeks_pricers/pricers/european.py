@@ -126,118 +126,146 @@ def _assert_even(n, name):
         message=f"{name} must be even when antithetic sampling is active",
     )
 
-class MCEuropeanOption:
-    """
-    Monte Carlo pricer for European options computing price, Delta and Vega at
-    the same time.
-    - ``vol_model`` float/int → flat volatility (single-step closed form)
-    - ``vol_model`` :class:`DupireLocalVol` → local volatility (Euler scheme for
-      ``S_T`` only)
-    - ``use_scan`` use ``tf.scan`` instead of ``tf.foldl`` when simulating paths
-      under local volatility
-    """
-    def __init__(self, S0, K, T, r, q, vol_model, *,
-                 is_call=False, n_paths=100_000, n_steps=60,
-                 antithetic=True, seed=0, dtype=tf.float64,
-                 use_scan=False):
-        if antithetic:
-            _assert_even(n_paths, 'n_paths')
-            _assert_even(n_steps, 'n_steps')
+class MarketData:
+    """Container for market information used in simulations."""
 
-        self.S0 = tf.constant(S0, dtype=dtype)
-        self.K  = tf.constant(K,  dtype=dtype)
-        self.T  = tf.constant(T,  dtype=dtype)
-        self.r  = tf.constant(r,  dtype=dtype)
-        self.q  = tf.constant(q,  dtype=dtype)
+    def __init__(self, r, vol_model, *, dtype=tf.float64):
+        self.r = tf.constant(r, dtype=dtype)
+        self.dtype = dtype
 
-        self.is_call    = is_call
-        self.n_paths    = n_paths
-        self.n_steps    = n_steps
-        self.antithetic = antithetic
-        self.seed       = seed
-        self.dtype      = dtype
-        self.use_scan   = use_scan
-
-        self._flat_sigma  = None
+        self._flat_sigma = None
         self._dupire_grid = None
-        self._sigma_fn    = self._build_sigma_fn(vol_model)
-
-        self._last_price = None
-        self._last_delta = None
-        self._last_vega  = None
+        self._sigma_fn = self._build_sigma_fn(vol_model)
 
     def _build_sigma_fn(self, vm):
         if isinstance(vm, (float, int)):
             self._flat_sigma = tf.Variable(float(vm), dtype=self.dtype, trainable=True)
+
             @tf.function(reduce_retracing=True)
             def const_sigma(x):
                 return tf.fill([tf.shape(x)[0]], self._flat_sigma)
+
             return const_sigma
 
-        if hasattr(vm, 'surface') and hasattr(vm, 'strikes'):
+        if hasattr(vm, "surface") and hasattr(vm, "strikes"):
             self._dupire_grid = tf.Variable(vm.surface, dtype=self.dtype, trainable=True)
             strikes, mats = vm.strikes, vm.maturities
+
             @tf.function(reduce_retracing=True)
             def local_sigma(x):
-                t, spot = x[:,0], x[:,1]
+                t, spot = x[:, 0], x[:, 1]
                 grid = self._dupire_grid.read_value()
                 return ImpliedVolSurface.bilinear(t, spot, grid, strikes, mats)
+
             return local_sigma
 
         raise TypeError("vol_model must be float/int or DupireLocalVol")
 
+    def discount_factor(self, T):
+        T = tf.cast(T, self.dtype)
+        return tf.exp(-self.r * T)
+
+    def sigma(self, t, spot):
+        return self._sigma_fn(tf.stack([t, spot], axis=1))
+
+
+class EuropeanAsset:
+    """Simulates the underlying asset paths."""
+
+    def __init__(
+        self,
+        S0,
+        q,
+        *,
+        n_paths=100_000,
+        n_steps=60,
+        antithetic=True,
+        seed=0,
+        dtype=tf.float64,
+        use_scan=False,
+    ):
+        if antithetic:
+            _assert_even(n_paths, "n_paths")
+            _assert_even(n_steps, "n_steps")
+
+        self.S0 = tf.constant(S0, dtype=dtype)
+        self.q = tf.constant(q, dtype=dtype)
+        self.n_paths = n_paths
+        self.n_steps = n_steps
+        self.antithetic = antithetic
+        self.seed = seed
+        self.dtype = dtype
+        self.use_scan = use_scan
+
     @tf.function(jit_compile=True, reduce_retracing=True)
-    def _brownian(self):
-        M, N = self.n_steps, self.n_paths
-        dt  = self.T / tf.cast(M, self.dtype)
-        sd  = tf.sqrt(dt)
-        Z = tf.random.stateless_normal([M, N//(2 if self.antithetic else 1)],
-                                       [self.seed, 0], dtype=self.dtype)
+    def _brownian(self, T):
+        M = self.n_steps
+        dt = T / tf.cast(M, self.dtype)
+        sd = tf.sqrt(dt)
+        Z = tf.random.stateless_normal(
+            [M, self.n_paths // (2 if self.antithetic else 1)],
+            [self.seed, 0],
+            dtype=self.dtype,
+        )
         if self.antithetic:
             Z = tf.concat([Z, -Z], axis=1)
         return Z * sd
 
+    def simulate(self, T, market: MarketData):
+        """Return the asset price at maturity ``T``."""
+        if market._flat_sigma is not None:
+            sigma = market._flat_sigma
+            Z = tf.random.stateless_normal([self.n_paths], [self.seed, 0], dtype=self.dtype)
+            return self.S0 * tf.exp((market.r - self.q - 0.5 * sigma ** 2) * T + sigma * tf.sqrt(T) * Z)
+
+        dt = T / tf.cast(self.n_steps, self.dtype)
+        dW = self._brownian(T)
+        times = tf.range(self.n_steps, dtype=self.dtype) * dt
+        S = tf.fill([self.n_paths], self.S0)
+
+        def step(prev, elems):
+            dWi, tc = elems
+            sig = market._sigma_fn(tf.stack([tf.fill([self.n_paths], tc), prev], axis=1))
+            return prev * tf.exp((market.r - self.q - 0.5 * sig ** 2) * dt + sig * dWi)
+
+        if self.use_scan:
+            path = tf.scan(step, (dW, times), initializer=S)
+            return path[-1]
+
+        return tf.foldl(step, (dW, times), initializer=S)
+
+class MCEuropeanOption:
+    """Monte Carlo pricer for European options."""
+
+    def __init__(self, asset: EuropeanAsset, market: MarketData, K, T, *, is_call=False):
+        self.asset = asset
+        self.market = market
+        self.K = tf.constant(K, dtype=asset.dtype)
+        self.T = tf.constant(T, dtype=asset.dtype)
+        self.is_call = is_call
+
+        self._last_price = None
+        self._last_delta = None
+        self._last_vega = None
+
     @tf.function(jit_compile=True, reduce_retracing=True)
     def _compute_price_and_grads(self):
         with tf.GradientTape(persistent=True) as tape:
-            tape.watch(self.S0)
-            if self._flat_sigma is not None:
-                tape.watch(self._flat_sigma)
-            elif self._dupire_grid is not None:
-                tape.watch(self._dupire_grid)
+            tape.watch(self.asset.S0)
+            if self.market._flat_sigma is not None:
+                tape.watch(self.market._flat_sigma)
+            elif self.market._dupire_grid is not None:
+                tape.watch(self.market._dupire_grid)
 
-            # simulate the paths and compute the payoff
-            if self._flat_sigma is not None:
-                sigma = self._flat_sigma
-                Z = tf.random.stateless_normal([self.n_paths], [self.seed, 0], dtype=self.dtype)
-                ST = self.S0 * tf.exp((self.r - 0.5 * sigma**2) * self.T + sigma * tf.sqrt(self.T) * Z)
-            else:
-                dt    = self.T / tf.cast(self.n_steps, self.dtype)
-                dW    = self._brownian()
-                times = tf.range(self.n_steps, dtype=self.dtype) * dt
-                S     = tf.fill([self.n_paths], self.S0)
-                def step(prev, elems):
-                    dWi, tc = elems
-                    sig = self._sigma_fn(
-                        tf.stack([tf.fill([self.n_paths], tc), prev], axis=1)
-                    )
-                    return prev * tf.exp((self.r - 0.5 * sig**2) * dt + sig * dWi)
-                if self.use_scan:
-                    path = tf.scan(step, (dW, times), initializer=S)
-                    ST = path[-1]
-                else:
-                    ST = tf.foldl(step, (dW, times), initializer=S)
+            ST = self.asset.simulate(self.T, self.market)
+            payoff = tf.where(self.is_call, tf.nn.relu(ST - self.K), tf.nn.relu(self.K - ST))
+            price = self.market.discount_factor(self.T) * tf.reduce_mean(payoff)
 
-            payoff = tf.where(self.is_call,
-                              tf.nn.relu(ST - self.K),
-                              tf.nn.relu(self.K - ST))
-            price = tf.exp(-self.r * self.T) * tf.reduce_mean(payoff)
-
-        delta = tape.gradient(price, self.S0)
-        if self._flat_sigma is not None:
-            vega = tape.gradient(price, self._flat_sigma)
+        delta = tape.gradient(price, self.asset.S0)
+        if self.market._flat_sigma is not None:
+            vega = tape.gradient(price, self.market._flat_sigma)
         else:
-            grid_grad = tape.gradient(price, self._dupire_grid)
+            grid_grad = tape.gradient(price, self.market._dupire_grid)
             vega = tf.reduce_sum(grid_grad)
         del tape
         return price, delta, vega
@@ -246,7 +274,7 @@ class MCEuropeanOption:
         price, delta, vega = self._compute_price_and_grads()
         self._last_price = price
         self._last_delta = delta
-        self._last_vega  = vega
+        self._last_vega = vega
         return price
 
     def delta(self):
@@ -256,11 +284,11 @@ class MCEuropeanOption:
 
     @tf.function(jit_compile=True, reduce_retracing=True)
     def vega_bucket(self):
-        if self._dupire_grid is None:
+        if self.market._dupire_grid is None:
             raise ValueError("bucket-vega only available with DupireLocalVol")
         with tf.GradientTape() as tape:
             price = self.__call__()
-        return tape.gradient(price, self._dupire_grid)
+        return tape.gradient(price, self.market._dupire_grid)
 
     def vega(self):
         if self._last_vega is None:
