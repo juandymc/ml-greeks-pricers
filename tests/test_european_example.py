@@ -3,6 +3,8 @@ import tensorflow as tf
 from ml_greeks_pricers.pricers.european import (
     AnalyticalEuropeanOption,
     MCEuropeanOption,
+    EuropeanAsset,
+    MarketData,
 )
 from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 
@@ -35,19 +37,31 @@ def test_monte_carlo_prices_close_to_analytical():
     anal = AnalyticalEuropeanOption(S0, K, T, 0, r, q, iv_vol, is_call=False)
     analytical_price = anal().numpy()
 
-    mc_flat = MCEuropeanOption(
-        S0, K, T, r, q, iv_vol,
-        n_paths=n_paths, n_steps=n_steps,
-        use_scan=True, seed=0,
+    market_flat = MarketData(r, iv_vol)
+    asset_flat = EuropeanAsset(
+        S0,
+        q,
+        T,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        use_scan=True,
+        seed=0,
     )
+    mc_flat = MCEuropeanOption(asset_flat, market_flat, K, T, is_call=False)
     flat_price = mc_flat().numpy()
 
     dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
-    mc_loc = MCEuropeanOption(
-        S0, K, T, r, q, dup,
-        n_paths=n_paths, n_steps=n_steps,
-        use_scan=True, seed=0,
+    market_dup = MarketData(r, dup)
+    asset_dup = EuropeanAsset(
+        S0,
+        q,
+        T,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        use_scan=True,
+        seed=0,
     )
+    mc_loc = MCEuropeanOption(asset_dup, market_dup, K, T, is_call=False)
     dupire_price = mc_loc().numpy()
 
     def check(label, price):
