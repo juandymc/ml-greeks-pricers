@@ -13,6 +13,7 @@ S0, K, T, r, q = 110., 90., 0.5, 0.06, 0.
 iv_vol = 0.212
 n_paths = 50_000
 n_steps = 100
+dt = T / n_steps
 
 strikes = [60, 70, 80, 90, 100, 110, 120, 130, 140]
 mats = [0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00]
@@ -41,8 +42,9 @@ def test_monte_carlo_prices_close_to_analytical():
     asset_flat = EuropeanAsset(
         S0,
         q,
+        T=T,
+        dt=dt,
         n_paths=n_paths,
-        n_steps=n_steps,
         use_scan=True,
         seed=0,
     )
@@ -54,8 +56,9 @@ def test_monte_carlo_prices_close_to_analytical():
     asset_dup = EuropeanAsset(
         S0,
         q,
+        T=T,
+        dt=dt,
         n_paths=n_paths,
-        n_steps=n_steps,
         use_scan=True,
         seed=0,
     )
