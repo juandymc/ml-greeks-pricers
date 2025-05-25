@@ -276,23 +276,29 @@ class EuropeanAsset:
 
         # generate a fresh path
         dW = self._brownian(steps)
-        times = tf.range(steps, dtype=self.dtype) * self.dt
-        S = tf.fill([self.n_paths], self.S0)
 
-        def step(prev, elems):
-            dWi, tc = elems
-            if market._flat_sigma is not None:
-                sig = tf.fill([self.n_paths], market._flat_sigma)
-            else:
+        if market._flat_sigma is not None:
+            # vectorised simulation for constant volatility
+            sig = market._flat_sigma
+            incr = tf.math.cumsum(dW, axis=0)
+            times = tf.range(1, steps + 1, dtype=self.dtype) * self.dt
+            drift = (market.r - self.q - 0.5 * sig ** 2) * times[:, None]
+            path = self.S0 * tf.exp(drift + sig * incr)
+        else:
+            times = tf.range(steps, dtype=self.dtype) * self.dt
+            S = tf.fill([self.n_paths], self.S0)
+
+            def step(prev, elems):
+                dWi, tc = elems
                 sig = market._sigma_fn(
                     tf.stack([tf.fill([self.n_paths], tc), prev], axis=1)
                 )
-            return prev * tf.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dWi)
+                return prev * tf.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dWi)
 
-        if self.use_scan:
-            path = tf.scan(step, (dW, times), initializer=S)
-        else:
-            path = tf.foldl(step, (dW, times), initializer=S)
+            if self.use_scan:
+                path = tf.scan(step, (dW, times), initializer=S)
+            else:
+                path = tf.foldl(step, (dW, times), initializer=S)
 
         # store the path for reuse in subsequent pricing calls. ``assign`` ensures
         # the tensor is kept inside a ``tf.Variable`` that can be safely accessed

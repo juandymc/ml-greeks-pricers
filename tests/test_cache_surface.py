@@ -69,5 +69,5 @@ def test_surface_diff_with_cache():
     diff_flat = 100.0 * (prices_flat - prices_ana).abs() / prices_ana
     diff_dup = 100.0 * (prices_dup - prices_ana).abs() / prices_ana
 
-    assert diff_flat.values.max() < 150.0
-    assert diff_dup.values.max() < 150.0
+    assert diff_flat.values.max() < 120.0
+    assert diff_dup.values.max() < 120.0
