@@ -43,13 +43,13 @@ market_flat = MarketData(r, iv_vol)
 dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
 market_dup = MarketData(r, dup)
 
-# helper to price the full surface
+# helper to price and compute greeks for the full surface
 
-def price_surface(market, use_cache):
-    """Price all strike/maturity pairs for ``market``.
+def surface(market, use_cache):
+    """Return price, delta and vega surfaces for ``market``.
 
-    Returns a ``pandas.DataFrame`` with maturities as index and strikes as
-    columns.
+    Each surface is a ``pandas.DataFrame`` with maturities as index and
+    strikes as columns.
     """
     asset = EuropeanAsset(
         S0,
@@ -61,50 +61,86 @@ def price_surface(market, use_cache):
         seed=0,
     )
 
-    rows = []
+    price_rows = []
+    delta_rows = []
+    vega_rows = []
     for T in mats:
-        row = []
+        price_row = []
+        delta_row = []
+        vega_row = []
         for K in strikes:
-            opt = MCEuropeanOption(asset, market, K, T, is_call=False, use_cache=use_cache)
-            row.append(opt().numpy())
-        rows.append(row)
+            opt = MCEuropeanOption(
+                asset, market, K, T, is_call=False, use_cache=use_cache
+            )
+            price_row.append(opt().numpy())
+            delta_row.append(opt.delta().numpy())
+            vega_row.append(opt.vega().numpy())
+        price_rows.append(price_row)
+        delta_rows.append(delta_row)
+        vega_rows.append(vega_row)
 
-    return pd.DataFrame(rows, index=mats, columns=strikes)
+    return (
+        pd.DataFrame(price_rows, index=mats, columns=strikes),
+        pd.DataFrame(delta_rows, index=mats, columns=strikes),
+        pd.DataFrame(vega_rows, index=mats, columns=strikes),
+    )
 
 
 def measure(market, name, use_cache):
-    """Time the pricing of the full surface using ``market``."""
-    warm_asset = EuropeanAsset(S0, q, T=T_max, dt=dt, n_paths=n_paths, use_scan=True, seed=0)
-    warm_opt = MCEuropeanOption(warm_asset, market, strikes[0], mats[-1], is_call=False, use_cache=use_cache)
+    """Time the computation of the full surface using ``market``."""
+    warm_asset = EuropeanAsset(
+        S0, q, T=T_max, dt=dt, n_paths=n_paths, use_scan=True, seed=0
+    )
+    warm_opt = MCEuropeanOption(
+        warm_asset, market, strikes[0], mats[-1], is_call=False, use_cache=use_cache
+    )
     warm_opt()
 
     start = time.perf_counter()
-    df = price_surface(market, use_cache)
+    result = surface(market, use_cache)
     elapsed = time.perf_counter() - start
     print(f"{name} ({'cache' if use_cache else 'no cache'}): {elapsed:.2f}s")
-    return df
+    return result
 
 
 def analytical_surface():
-    """Return analytical prices for every strike/maturity pair."""
-    rows = []
+    """Return analytical price, delta and vega surfaces."""
+    price_rows = []
+    delta_rows = []
+    vega_rows = []
     for i, T in enumerate(mats):
-        row = []
+        price_row = []
+        delta_row = []
+        vega_row = []
         for j, K in enumerate(strikes):
             sigma = iv[i][j]
-            ana = AnalyticalEuropeanOption(S0, K, T, 0.0, r, q, sigma, is_call=False)
-            row.append(ana().numpy())
-        rows.append(row)
-    return pd.DataFrame(rows, index=mats, columns=strikes)
+            ana = AnalyticalEuropeanOption(
+                S0, K, T, 0.0, r, q, sigma, is_call=False
+            )
+            price_row.append(ana().numpy())
+            delta_row.append(ana.delta().numpy())
+            vega_row.append(ana.vega().numpy())
+        price_rows.append(price_row)
+        delta_rows.append(delta_row)
+        vega_rows.append(vega_row)
+    return (
+        pd.DataFrame(price_rows, index=mats, columns=strikes),
+        pd.DataFrame(delta_rows, index=mats, columns=strikes),
+        pd.DataFrame(vega_rows, index=mats, columns=strikes),
+    )
 
 
 if __name__ == '__main__':
-    prices_ana = analytical_surface()
-    prices_flat = measure(market_flat, 'flat', True)
-    prices_dup = measure(market_dup, 'dupire', True)
+    prices_ana, deltas_ana, vegas_ana = analytical_surface()
+    prices_flat, deltas_flat, vegas_flat = measure(market_flat, 'flat', True)
+    prices_dup, deltas_dup, vegas_dup = measure(market_dup, 'dupire', True)
 
-    diff_flat = 100.0 * (prices_flat - prices_ana) / prices_ana
-    diff_dup = 100.0 * (prices_dup - prices_ana) / prices_ana
+    diff_flat_p = 100.0 * (prices_flat - prices_ana) / prices_ana
+    diff_dup_p = 100.0 * (prices_dup - prices_ana) / prices_ana
+    diff_flat_d = 100.0 * (deltas_flat - deltas_ana) / deltas_ana
+    diff_dup_d = 100.0 * (deltas_dup - deltas_ana) / deltas_ana
+    diff_flat_v = 100.0 * (vegas_flat - vegas_ana) / vegas_ana
+    diff_dup_v = 100.0 * (vegas_dup - vegas_ana) / vegas_ana
 
     print('\nAnalytical Prices:')
     print(prices_ana)
@@ -112,7 +148,29 @@ if __name__ == '__main__':
     print(prices_flat)
     print('\nDupire MC Prices:')
     print(prices_dup)
-    print('\nFlat % diff vs analytical:')
-    print(diff_flat)
-    print('\nDupire % diff vs analytical:')
-    print(diff_dup)
+    print('\nFlat % diff vs analytical (price):')
+    print(diff_flat_p)
+    print('\nDupire % diff vs analytical (price):')
+    print(diff_dup_p)
+
+    print('\nAnalytical Delta:')
+    print(deltas_ana)
+    print('\nFlat MC Delta:')
+    print(deltas_flat)
+    print('\nDupire MC Delta:')
+    print(deltas_dup)
+    print('\nFlat % diff vs analytical (delta):')
+    print(diff_flat_d)
+    print('\nDupire % diff vs analytical (delta):')
+    print(diff_dup_d)
+
+    print('\nAnalytical Vega:')
+    print(vegas_ana)
+    print('\nFlat MC Vega:')
+    print(vegas_flat)
+    print('\nDupire MC Vega:')
+    print(vegas_dup)
+    print('\nFlat % diff vs analytical (vega):')
+    print(diff_flat_v)
+    print('\nDupire % diff vs analytical (vega):')
+    print(diff_dup_v)
