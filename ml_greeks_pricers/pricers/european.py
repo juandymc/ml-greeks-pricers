@@ -227,17 +227,15 @@ class EuropeanAsset:
         self.dtype = dtype
         self.use_scan = use_scan
 
-        # cache for simulated paths
-        # ``_cached_paths`` is a ``tf.Variable`` so that tensors can be reused
-        # safely across ``tf.function`` invocations.  Using plain tensors would
-        # raise "out of scope" errors when the compiled graphs try to access a
-        # tensor produced in a previous call.
-        self._cached_paths = tf.Variable(
+        # cache for Brownian increments.  ``_cached_dW`` is a ``tf.Variable`` so
+        # that tensors can be reused safely across ``tf.function`` invocations.
+        # Using plain tensors would raise "out of scope" errors when the
+        # compiled graphs try to access a tensor produced in a previous call.
+        self._cached_dW = tf.Variable(
             tf.zeros([self.n_steps, n_paths], dtype=dtype), trainable=False
         )
         self._cache_valid = False
-        self._cached_T = None
-        self._cached_market = None
+        self._cached_steps = 0
 
     @tf.function(jit_compile=True, reduce_retracing=True)
     def _brownian(self, n_steps):
@@ -264,18 +262,17 @@ class EuropeanAsset:
         T_val = float(tf.get_static_value(T))
         steps = int(round(T_val / float(tf.get_static_value(self.dt))))
 
-        if (
-            use_cache
-            and self._cache_valid
-            and market is self._cached_market
-            and T_val <= self._cached_T + 1e-12
-        ):
+        if use_cache and self._cache_valid and steps <= self._cached_steps:
             if steps == 0:
                 return tf.fill([self.n_paths], self.S0)
-            return self._cached_paths[steps - 1]
+            dW = self._cached_dW[:steps]
+        else:
+            dW = self._brownian(steps)
+            if use_cache:
+                self._cached_dW[:steps].assign(dW)
+                self._cache_valid = True
+                self._cached_steps = steps
 
-        # generate a fresh path
-        dW = self._brownian(steps)
         times = tf.range(steps, dtype=self.dtype) * self.dt
         S = tf.fill([self.n_paths], self.S0)
 
@@ -293,14 +290,6 @@ class EuropeanAsset:
             path = tf.scan(step, (dW, times), initializer=S)
         else:
             path = tf.foldl(step, (dW, times), initializer=S)
-
-        # store the path for reuse in subsequent pricing calls. ``assign`` ensures
-        # the tensor is kept inside a ``tf.Variable`` that can be safely accessed
-        # from compiled graphs.
-        self._cached_paths[:steps].assign(path)
-        self._cache_valid = True
-        self._cached_T = T_val
-        self._cached_market = market
 
         return path[-1]
 

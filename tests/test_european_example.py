@@ -79,3 +79,42 @@ def test_monte_carlo_prices_close_to_analytical():
 
     assert flat_diff < FAIL_TOL
     assert dupire_diff < FAIL_TOL
+
+def test_monte_carlo_greeks_close_to_analytical():
+    tf.keras.backend.set_floatx("float64")
+
+    anal = AnalyticalEuropeanOption(S0, K, T, 0, r, q, iv_vol, is_call=False)
+    analytical_delta = anal.delta().numpy()
+    analytical_vega = anal.vega().numpy()
+
+    market_flat = MarketData(r, iv_vol)
+    asset_flat = EuropeanAsset(
+        S0,
+        q,
+        T=T,
+        dt=dt,
+        n_paths=n_paths,
+        use_scan=True,
+        seed=0,
+    )
+    mc_flat = MCEuropeanOption(asset_flat, market_flat, K, T, is_call=False)
+    _ = mc_flat()
+    mc_delta = mc_flat.delta().numpy()
+    mc_vega = mc_flat.vega().numpy()
+
+    delta_diff = abs(mc_delta - analytical_delta) / abs(analytical_delta)
+    vega_diff = abs(mc_vega - analytical_vega) / abs(analytical_vega)
+
+    if delta_diff > WARN_TOL:
+        warnings.warn(
+            f"delta differs from analytical by {delta_diff:.2%}",
+            RuntimeWarning,
+        )
+    if vega_diff > WARN_TOL:
+        warnings.warn(
+            f"vega differs from analytical by {vega_diff:.2%}",
+            RuntimeWarning,
+        )
+
+    assert delta_diff < FAIL_TOL
+    assert vega_diff < FAIL_TOL
