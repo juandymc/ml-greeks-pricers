@@ -18,10 +18,12 @@ if __name__ == '__main__':
     S0,K,T,r,q = 110.,90.,0.5,0.06,0.
     iv_vol = 0.212
     analEur = AnalyticalEuropeanOption(S0, K, T, 0, r, q, iv_vol, is_call=False)
-    tf.print('analytical', analEur(), analEur.delta(), analEur.vega())
+    analytical_price = analEur().numpy()
+    tf.print('analytical', analytical_price, analEur.delta(), analEur.vega())
     # ---- volatilidad constante ---------------------------------------
     mc_flat = MCEuropeanOption(S0,K,T,r,q,iv_vol, n_paths=n_paths, n_steps=n_steps, use_scan=True, seed=0)
-    tf.print('flat', mc_flat(), mc_flat.delta(), mc_flat.vega())
+    flat_price = mc_flat().numpy()
+    tf.print('flat', flat_price, mc_flat.delta(), mc_flat.vega())
 
     # ---- Dupire local-vol --------------------------------------------
     strikes = [60, 70, 80, 90, 100, 110, 120, 130, 140]
@@ -41,7 +43,16 @@ if __name__ == '__main__':
     dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
 
     mc_loc = MCEuropeanOption(S0,K,T,r,q,dup,n_paths=n_paths, n_steps=n_steps, use_scan=True, seed=0)
-    tf.print('dupire', mc_loc(), mc_loc.delta(), mc_loc.vega())
-    #tf.print('bucket vega\\n', mc_loc.vega_bucket())
-    
-    
+    dupire_price = mc_loc().numpy()
+    tf.print('dupire', dupire_price, mc_loc.delta(), mc_loc.vega())
+
+    def warn_if_far(name, price):
+        diff = abs(price - analytical_price) / analytical_price
+        if diff > 0.025:
+            warnings.warn(
+                f"{name} price differs from analytical by {diff:.2%}",
+                RuntimeWarning,
+            )
+
+    warn_if_far('flat', flat_price)
+    warn_if_far('dupire', dupire_price)
