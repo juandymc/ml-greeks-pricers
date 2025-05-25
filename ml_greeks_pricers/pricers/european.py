@@ -333,8 +333,19 @@ class MCEuropeanOption:
             price = self.market.discount_factor(self.T) * tf.reduce_mean(payoff)
 
         delta = tape.gradient(price, self.asset.S0)
+        if delta is None:
+            # When cached paths are reused ``delta`` can be ``None`` because the
+            # asset spot is not part of the current computation graph.  In that
+            # case the sensitivity is zero.
+            delta = tf.zeros_like(self.asset.S0)
+
         if self.market._flat_sigma is not None:
             vega = tape.gradient(price, self.market._flat_sigma)
+            if vega is None:
+                # If cached paths are reused the volatility parameter might not
+                # be watched by the gradient tape and the result is ``None``.
+                # Return a zero sensitivity in that case as well.
+                vega = tf.zeros_like(self.market._flat_sigma)
         else:
             grid_grad = tape.gradient(price, self.market._dupire_grid)
             if grid_grad is None:
