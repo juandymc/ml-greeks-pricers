@@ -7,7 +7,13 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 tf.get_logger().setLevel('ERROR')
 tf.keras.backend.set_floatx('float64')
 
-from ml_greeks_pricers.pricers.european import MarketData, MCEuropeanOption, EuropeanAsset
+from ml_greeks_pricers.pricers.european import (
+    MarketData,
+    MCEuropeanOption,
+    EuropeanAsset,
+    AnalyticalEuropeanOption,
+)
+import pandas as pd
 from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 
 # parameters copied from examples/european.py
@@ -40,6 +46,11 @@ market_dup = MarketData(r, dup)
 # helper to price the full surface
 
 def price_surface(market, use_cache):
+    """Price all strike/maturity pairs for ``market``.
+
+    Returns a ``pandas.DataFrame`` with maturities as index and strikes as
+    columns.
+    """
     asset = EuropeanAsset(
         S0,
         q,
@@ -49,24 +60,59 @@ def price_surface(market, use_cache):
         use_scan=True,
         seed=0,
     )
-    for T in sorted(mats, reverse=True):
+
+    rows = []
+    for T in mats:
+        row = []
         for K in strikes:
             opt = MCEuropeanOption(asset, market, K, T, is_call=False, use_cache=use_cache)
-            opt()
+            row.append(opt().numpy())
+        rows.append(row)
+
+    return pd.DataFrame(rows, index=mats, columns=strikes)
 
 
 def measure(market, name, use_cache):
-    # warm-up compilation
+    """Time the pricing of the full surface using ``market``."""
     warm_asset = EuropeanAsset(S0, q, T=T_max, dt=dt, n_paths=n_paths, use_scan=True, seed=0)
     warm_opt = MCEuropeanOption(warm_asset, market, strikes[0], mats[-1], is_call=False, use_cache=use_cache)
     warm_opt()
+
     start = time.perf_counter()
-    price_surface(market, use_cache)
+    df = price_surface(market, use_cache)
     elapsed = time.perf_counter() - start
     print(f"{name} ({'cache' if use_cache else 'no cache'}): {elapsed:.2f}s")
+    return df
+
+
+def analytical_surface():
+    """Return analytical prices for every strike/maturity pair."""
+    rows = []
+    for i, T in enumerate(mats):
+        row = []
+        for j, K in enumerate(strikes):
+            sigma = iv[i][j]
+            ana = AnalyticalEuropeanOption(S0, K, T, 0.0, r, q, sigma, is_call=False)
+            row.append(ana().numpy())
+        rows.append(row)
+    return pd.DataFrame(rows, index=mats, columns=strikes)
 
 
 if __name__ == '__main__':
-    for mkt, name in ((market_flat, 'flat'), (market_dup, 'dupire')):
-        measure(mkt, name, True)
-        measure(mkt, name, False)
+    prices_ana = analytical_surface()
+    prices_flat = measure(market_flat, 'flat', True)
+    prices_dup = measure(market_dup, 'dupire', True)
+
+    diff_flat = 100.0 * (prices_flat - prices_ana) / prices_ana
+    diff_dup = 100.0 * (prices_dup - prices_ana) / prices_ana
+
+    print('\nAnalytical Prices:')
+    print(prices_ana)
+    print('\nFlat MC Prices:')
+    print(prices_flat)
+    print('\nDupire MC Prices:')
+    print(prices_dup)
+    print('\nFlat % diff vs analytical:')
+    print(diff_flat)
+    print('\nDupire % diff vs analytical:')
+    print(diff_dup)

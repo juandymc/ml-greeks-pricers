@@ -228,7 +228,14 @@ class EuropeanAsset:
         self.use_scan = use_scan
 
         # cache for simulated paths
-        self._cached_paths = None
+        # ``_cached_paths`` is a ``tf.Variable`` so that tensors can be reused
+        # safely across ``tf.function`` invocations.  Using plain tensors would
+        # raise "out of scope" errors when the compiled graphs try to access a
+        # tensor produced in a previous call.
+        self._cached_paths = tf.Variable(
+            tf.zeros([self.n_steps, n_paths], dtype=dtype), trainable=False
+        )
+        self._cache_valid = False
         self._cached_T = None
         self._cached_market = None
 
@@ -259,7 +266,7 @@ class EuropeanAsset:
 
         if (
             use_cache
-            and self._cached_paths is not None
+            and self._cache_valid
             and market is self._cached_market
             and T_val <= self._cached_T + 1e-12
         ):
@@ -287,7 +294,11 @@ class EuropeanAsset:
         else:
             path = tf.foldl(step, (dW, times), initializer=S)
 
-        self._cached_paths = path
+        # store the path for reuse in subsequent pricing calls. ``assign`` ensures
+        # the tensor is kept inside a ``tf.Variable`` that can be safely accessed
+        # from compiled graphs.
+        self._cached_paths[:steps].assign(path)
+        self._cache_valid = True
         self._cached_T = T_val
         self._cached_market = market
 
