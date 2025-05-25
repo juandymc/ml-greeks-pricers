@@ -337,6 +337,11 @@ class MCEuropeanOption:
             vega = tape.gradient(price, self.market._flat_sigma)
         else:
             grid_grad = tape.gradient(price, self.market._dupire_grid)
+            if grid_grad is None:
+                # When cached paths are reused ``grid_grad`` can be ``None``
+                # because the local vol grid was not part of the computation
+                # graph.  In that case the sensitivity is zero.
+                grid_grad = tf.zeros_like(self.market._dupire_grid)
             vega = tf.reduce_sum(grid_grad)
         del tape
         return price, delta, vega
