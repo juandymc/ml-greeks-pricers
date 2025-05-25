@@ -49,9 +49,7 @@ def price_surface(market, use_cache):
     """Price all strike/maturity pairs for ``market``.
 
     Returns a ``pandas.DataFrame`` with maturities as index and strikes as
-    columns.  Maturities are priced in descending order so that the simulated
-    paths for the longest maturity can be reused for shorter ones when
-    ``use_cache`` is ``True``.
+    columns.
     """
     asset = EuropeanAsset(
         S0,
@@ -63,15 +61,14 @@ def price_surface(market, use_cache):
         seed=0,
     )
 
-    temp = {}
-    for T in sorted(mats, reverse=True):
+    rows = []
+    for T in mats:
         row = []
         for K in strikes:
             opt = MCEuropeanOption(asset, market, K, T, is_call=False, use_cache=use_cache)
             row.append(opt().numpy())
-        temp[T] = row
+        rows.append(row)
 
-    rows = [temp[T] for T in mats]
     return pd.DataFrame(rows, index=mats, columns=strikes)
 
 
