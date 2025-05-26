@@ -9,7 +9,8 @@ import pandas as pd
 
 from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 from ml_greeks_pricers.common.constants import USE_XLA
-from ml_greeks_pricers.pricers.american import MCAmericanOption  # tu módulo american personalizado
+from ml_greeks_pricers.pricers.american import AmericanAsset, MCAmericanOption
+from ml_greeks_pricers.pricers.european import MarketData
 
 # ------------------------------
 # Supresión de logs innecesarios
@@ -67,12 +68,22 @@ csv_dir.mkdir(exist_ok=True)
     tf.TensorSpec([], dtype),
 ])
 def price_delta_vega_flat(K, T):
-    opt = MCAmericanOption(
-        S0, K, T, r, q, iv_vol,
-        n_paths=n_paths, n_steps=n_steps,
-        antithetic=antithetic, dtype=dtype, seed=seed
+    dt = T / n_steps
+    market = MarketData(r, iv_vol)
+    asset = AmericanAsset(
+        S0,
+        q,
+        T=T,
+        dt=dt,
+        n_paths=n_paths,
+        antithetic=antithetic,
+        seed=seed,
+        dtype=dtype,
     )
-    p, d, v = opt.price_and_grads()
+    opt = MCAmericanOption(asset, market, K, T, is_call=False)
+    p = opt()
+    d = opt.delta()
+    v = opt.vega()
     return p, d, v
 
 @tf.function(input_signature=[
@@ -80,12 +91,22 @@ def price_delta_vega_flat(K, T):
     tf.TensorSpec([], dtype),
 ])
 def price_delta_vega_dup(K, T):
-    opt = MCAmericanOption(
-        S0, K, T, r, q, dupire_vol,
-        n_paths=n_paths, n_steps=n_steps,
-        antithetic=antithetic, dtype=dtype, seed=seed
+    dt = T / n_steps
+    market = MarketData(r, dupire_vol)
+    asset = AmericanAsset(
+        S0,
+        q,
+        T=T,
+        dt=dt,
+        n_paths=n_paths,
+        antithetic=antithetic,
+        seed=seed,
+        dtype=dtype,
     )
-    p, d, v = opt.price_and_grads()
+    opt = MCAmericanOption(asset, market, K, T, is_call=False)
+    p = opt()
+    d = opt.delta()
+    v = opt.vega()
     return p, d, v
 
 # Warm-up para compilar ambos grafos una sola vez

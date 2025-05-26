@@ -1,6 +1,7 @@
 import tensorflow as tf
 from ml_greeks_pricers.volatility.discrete import DupireLocalVol
-from ml_greeks_pricers.pricers.american import MCAmericanOption
+from ml_greeks_pricers.pricers.american import AmericanAsset, MCAmericanOption
+from ml_greeks_pricers.pricers.european import MarketData
 
 tf.keras.backend.set_floatx('float64')
 dtype = tf.float64
@@ -33,17 +34,19 @@ if __name__ == "__main__":
     #dupire_lv = 0.212
 
 
-    # --- Americana ---
-    mc_amer = MCAmericanOption(
-        S0, K, T, r, q,
-        vol_model=dupire_lv,
-        is_call=False,
+    dt = T / n_steps
+    market = MarketData(r, dupire_lv)
+    asset = AmericanAsset(
+        S0,
+        q,
+        T=T,
+        dt=dt,
         n_paths=n_paths,
-        n_steps=n_steps,
         antithetic=True,
         seed=seed,
-        dtype=dtype
+        dtype=dtype,
     )
+    mc_amer = MCAmericanOption(asset, market, K, T, is_call=False)
     price_amer = mc_amer()
     delta_amer = mc_amer.delta()
     vega_amer = mc_amer.vega()
