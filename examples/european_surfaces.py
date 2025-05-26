@@ -1,5 +1,6 @@
 import os
 import time
+from pathlib import Path
 import tensorflow as tf
 
 # suppress TF logs
@@ -24,6 +25,10 @@ n_steps = 100
 T_max = 2.0
 # reuse same dt as examples/european.py (0.5/100)
 dt = 0.5 / n_steps
+
+# folder where CSV files will be stored
+csv_dir = Path(__file__).with_name('surfaces')
+csv_dir.mkdir(exist_ok=True)
 
 strikes = [60, 70, 80, 90, 100, 110, 120, 130, 140]
 mats = [0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00]
@@ -130,6 +135,12 @@ def analytical_surface():
     )
 
 
+def save_surfaces(prefix, prices, deltas, vegas):
+    prices.to_csv(csv_dir / f"{prefix}_prices.csv")
+    deltas.to_csv(csv_dir / f"{prefix}_deltas.csv")
+    vegas.to_csv(csv_dir / f"{prefix}_vegas.csv")
+
+
 if __name__ == '__main__':
     prices_ana, deltas_ana, vegas_ana = analytical_surface()
     prices_flat, deltas_flat, vegas_flat = measure(market_flat, 'flat', True)
@@ -174,3 +185,14 @@ if __name__ == '__main__':
     print(diff_flat_v)
     print('\nDupire % diff vs analytical (vega):')
     print(diff_dup_v)
+
+    # save surfaces to CSV files
+    save_surfaces('analytical', prices_ana, deltas_ana, vegas_ana)
+    save_surfaces('flat', prices_flat, deltas_flat, vegas_flat)
+    save_surfaces('dupire', prices_dup, deltas_dup, vegas_dup)
+    diff_flat_p.to_csv(csv_dir / 'diff_flat_price.csv')
+    diff_dup_p.to_csv(csv_dir / 'diff_dupire_price.csv')
+    diff_flat_d.to_csv(csv_dir / 'diff_flat_delta.csv')
+    diff_dup_d.to_csv(csv_dir / 'diff_dupire_delta.csv')
+    diff_flat_v.to_csv(csv_dir / 'diff_flat_vega.csv')
+    diff_dup_v.to_csv(csv_dir / 'diff_dupire_vega.csv')
