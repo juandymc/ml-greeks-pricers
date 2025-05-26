@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 import tensorflow as tf
 
@@ -20,11 +21,13 @@ from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 # parameters copied from examples/european.py
 S0, r, q = 110., 0.06, 0.
 iv_vol = 0.212
-n_paths = 50_000#10#
-n_steps = 100#10#
+n_paths = 50_000
+n_steps = 100
 T_max = 2.0
 # reuse same dt as examples/european.py (0.5/100)
 dt = 0.5 / n_steps
+
+log_path = Path(__file__).with_name("execution.log")
 
 # folder where CSV files will be stored
 csv_dir = Path(__file__).with_name('european_surfaces')
@@ -51,11 +54,6 @@ market_dup = MarketData(r, dup)
 # helper to price and compute greeks for the full surface
 
 def surface(market, use_cache):
-    """Return price, delta and vega surfaces for ``market``.
-
-    Each surface is a ``pandas.DataFrame`` with maturities as index and
-    strikes as columns.
-    """
     asset = EuropeanAsset(
         S0,
         q,
@@ -92,7 +90,6 @@ def surface(market, use_cache):
 
 
 def measure(market, name, use_cache):
-    """Time the computation of the full surface using ``market``."""
     warm_asset = EuropeanAsset(
         S0, q, T=T_max, dt=dt, n_paths=n_paths, use_scan=True, seed=0
     )
@@ -105,11 +102,10 @@ def measure(market, name, use_cache):
     result = surface(market, use_cache)
     elapsed = time.perf_counter() - start
     print(f"{name} ({'cache' if use_cache else 'no cache'}): {elapsed:.2f}s")
-    return result
+    return result, elapsed
 
 
 def analytical_surface():
-    """Return analytical price, delta and vega surfaces."""
     price_rows = []
     delta_rows = []
     vega_rows = []
@@ -143,8 +139,8 @@ def save_surfaces(prefix, prices, deltas, vegas):
 
 if __name__ == '__main__':
     prices_ana, deltas_ana, vegas_ana = analytical_surface()
-    prices_flat, deltas_flat, vegas_flat = measure(market_flat, 'flat', True)
-    prices_dup, deltas_dup, vegas_dup = measure(market_dup, 'dupire', False)
+    (prices_flat, deltas_flat, vegas_flat), t_flat = measure(market_flat, 'flat', True)
+    (prices_dup, deltas_dup, vegas_dup), t_dup = measure(market_dup, 'dupire', False)
 
     diff_flat_p = 100.0 * (prices_flat - prices_ana) / prices_ana
     diff_dup_p = 100.0 * (prices_dup - prices_ana) / prices_ana
@@ -186,7 +182,6 @@ if __name__ == '__main__':
     print('\nDupire % diff vs analytical (vega):')
     print(diff_dup_v)
 
-    # save surfaces to CSV files
     save_surfaces('analytical', prices_ana, deltas_ana, vegas_ana)
     save_surfaces('flat', prices_flat, deltas_flat, vegas_flat)
     save_surfaces('dupire', prices_dup, deltas_dup, vegas_dup)
@@ -196,3 +191,9 @@ if __name__ == '__main__':
     diff_dup_d.to_csv(csv_dir / 'diff_dupire_delta.csv')
     diff_flat_v.to_csv(csv_dir / 'diff_flat_vega.csv')
     diff_dup_v.to_csv(csv_dir / 'diff_dupire_vega.csv')
+
+    with log_path.open('a') as f:
+        f.write(
+            f"{datetime.now().isoformat()} european_surfaces n_steps={n_steps} n_paths={n_paths} "
+            f"flat_time={t_flat:.4f} dupire_time={t_dup:.4f}\n"
+        )

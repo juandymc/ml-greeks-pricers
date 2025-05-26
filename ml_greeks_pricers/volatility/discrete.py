@@ -47,7 +47,7 @@ class DupireLocalVol(ImpliedVolSurface):
         self.surface = self._compute_surface()
         self.grid    = self.surface
 
-    @tf.function(jit_compile=True, reduce_retracing=True)
+    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
     def _compute_surface(self):
         strikes, mats, iv = self.strikes, self.maturities, self.grid
         S0, r, q         = self.S0, self.r, self.q

@@ -14,7 +14,7 @@ from ml_greeks_pricers.common.constants import USE_XLA
 class AmericanAsset(EuropeanAsset):
     """Simulates full price paths for the underlying asset."""
 
-    @tf.function(reduce_retracing=True)
+    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
     def simulate(self, T, market: MarketData, *, use_cache=True) -> tf.Tensor:
         """Return the full simulated path up to maturity ``T``."""
 
@@ -85,7 +85,7 @@ class MCAmericanOption:
         self._last_delta = None
         self._last_vega = None
 
-    @tf.function(reduce_retracing=True)
+    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
     def _compute_price_and_grads(self):
         dt = self.asset.dt
         df = tf.exp(-self.market.r * dt)

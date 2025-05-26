@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 import tensorflow as tf
 
@@ -20,6 +21,8 @@ n_steps = 100
 T_max = 2.0
 # reuse same dt as examples/european.py (0.5/100)
 dt = 0.5 / n_steps
+
+log_path = Path(__file__).with_name("execution.log")
 
 # store CSV files in a dedicated folder for American option results
 csv_dir = Path(__file__).with_name('american_surfaces')
@@ -44,7 +47,6 @@ dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
 market_dup = MarketData(r, dup)
 
 def surface(market, use_cache=False):
-    """Return price, delta and vega surfaces for ``market``."""
     asset = AmericanAsset(
         S0,
         q,
@@ -80,7 +82,6 @@ def surface(market, use_cache=False):
     )
 
 def measure(market, name, use_cache=True):
-    """Time the computation of the full surface using ``market``."""
     warm_asset = AmericanAsset(
         S0, q, T=T_max, dt=dt, n_paths=n_paths, antithetic=True, seed=0
     )
@@ -93,7 +94,7 @@ def measure(market, name, use_cache=True):
     result = surface(market, use_cache)
     elapsed = time.perf_counter() - start
     print(f"{name} ({'cache' if use_cache else 'no cache'}): {elapsed:.2f}s")
-    return result
+    return result, elapsed
 
 def save_surfaces(prefix, prices, deltas, vegas):
     prices.to_csv(csv_dir / f"{prefix}_prices.csv")
@@ -101,8 +102,8 @@ def save_surfaces(prefix, prices, deltas, vegas):
     vegas.to_csv(csv_dir / f"{prefix}_vegas.csv")
 
 if __name__ == "__main__":
-    prices_flat, deltas_flat, vegas_flat = measure(market_flat, "flat", True)
-    prices_dup, deltas_dup, vegas_dup = measure(market_dup, "dupire", True)
+    (prices_flat, deltas_flat, vegas_flat), t_flat = measure(market_flat, "flat", True)
+    (prices_dup, deltas_dup, vegas_dup), t_dup = measure(market_dup, "dupire", True)
 
     print("\nFlat MC Prices:")
     print(prices_flat)
@@ -121,3 +122,9 @@ if __name__ == "__main__":
 
     save_surfaces("flat", prices_flat, deltas_flat, vegas_flat)
     save_surfaces("dupire", prices_dup, deltas_dup, vegas_dup)
+
+    with log_path.open("a") as f:
+        f.write(
+            f"{datetime.now().isoformat()} american_surfaces n_steps={n_steps} n_paths={n_paths} "
+            f"flat_time={t_flat:.4f} dupire_time={t_dup:.4f}\n"
+        )

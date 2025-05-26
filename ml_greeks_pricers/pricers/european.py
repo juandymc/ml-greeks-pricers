@@ -28,7 +28,7 @@ class AnalyticalEuropeanOption:
         self.is_call = is_call
 
     @staticmethod
-    @tf.function(reduce_retracing=True)
+    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
     def bs_price(
         S:     tf.Tensor,
         K:     tf.Tensor,
@@ -61,7 +61,7 @@ class AnalyticalEuropeanOption:
 
         return tf.where(is_call, call, put)
 
-    @tf.function(reduce_retracing=True)
+    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
     def price(self) -> tf.Tensor:
         return self.bs_price(
             self.S, self.K, self.T, self.t, self.r, self.q, self.sigma, self.is_call
@@ -237,7 +237,7 @@ class EuropeanAsset:
         self._cache_valid = False
         self._cached_steps = 0
 
-    @tf.function(jit_compile=True, reduce_retracing=True)
+    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
     def _brownian(self, n_steps):
         """Generate Brownian increments for ``n_steps`` using cached ``dt``."""
         M = tf.cast(n_steps, tf.int32)
@@ -308,7 +308,7 @@ class MCEuropeanOption:
         self._last_delta = None
         self._last_vega = None
 
-    @tf.function(jit_compile=True, reduce_retracing=True)
+    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
     def _compute_price_and_grads(self):
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(self.asset.S0)
@@ -358,7 +358,7 @@ class MCEuropeanOption:
             _ = self.__call__()
         return self._last_delta
 
-    @tf.function(jit_compile=True, reduce_retracing=True)
+    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
     def vega_bucket(self):
         if self.market._dupire_grid is None:
             raise ValueError("bucket-vega only available with DupireLocalVol")
