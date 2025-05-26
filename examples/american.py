@@ -18,6 +18,8 @@ if __name__ == "__main__":
     n_paths = 200_000
     n_steps = 50
     seed = 42
+    
+    dt = T / n_steps
 
     strikes = [60, 70, 80, 90, 100, 110, 120, 130, 140]
     mats = [0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00]
@@ -32,23 +34,23 @@ if __name__ == "__main__":
         [0.269, 0.254, 0.241, 0.230, 0.221, 0.214, 0.209, 0.206, 0.205],
     ]
     dupire_lv = DupireLocalVol(strikes, mats, iv, S0, r, q)
-    dupire_lv = 0.212  # constant volatility as reference
+    flat_lv = 0.212
 
-    market = MarketData(r, dupire_lv)
+    market_flat = MarketData(r, flat_lv)
+    market_dup  = MarketData(r, dupire_lv)
 
-    dt = T / n_steps
-    asset_eur = EuropeanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
-    mc_eur = MCEuropeanOption(asset_eur, market, K, T, is_call=False)
-
-    price_eur = mc_eur()
-    delta_eur = mc_eur.delta()
-    vega_eur = mc_eur.vega()
-    tf.print("European:", price_eur, "Delta:", delta_eur, "Vega:", vega_eur)
 
     asset_amer = AmericanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
-    mc_amer = MCAmericanOption(asset_amer, market, K, T, is_call=False)
+    mc_amer = MCAmericanOption(asset_amer, market_flat, K, T, is_call=False, use_cache = True)
 
     price_amer = mc_amer()
     delta_amer = mc_amer.delta()
     vega_amer = mc_amer.vega()
-    tf.print("American:", price_amer, "Delta:", delta_amer, "Vega:", vega_amer)
+    tf.print("American flat:", price_amer, "Delta:", delta_amer, "Vega:", vega_amer)
+    
+    asset_amer = AmericanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
+    mc_amer = MCAmericanOption(asset_amer, market_dup, K, T, is_call=False, use_cache = True)
+    price_amer = mc_amer()
+    delta_amer = mc_amer.delta()
+    vega_amer = mc_amer.vega()
+    tf.print("American Dupire:", price_amer, "Delta:", delta_amer, "Vega:", vega_amer)

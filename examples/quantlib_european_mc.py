@@ -5,8 +5,8 @@ import numpy as np
 # ----------------------- parámetros de entrada -------------------------
 S0, K, T = 110.0, 90.0, 0.50          # spot, strike, maturity (años)
 r, q     = 0.06, 0.00                 # tipos continuo y dividendo
-n_paths, n_steps = 400_000, 30
-seed = 0
+n_paths, n_steps = 500_000, 50
+seed = 42
 rng  = np.random.default_rng()
 
 strikes    = [60,70,80,90,100,110,120,130,140]          # 9 strikes
