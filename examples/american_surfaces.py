@@ -21,7 +21,8 @@ T_max = 2.0
 # reuse same dt as examples/european.py (0.5/100)
 dt = 0.5 / n_steps
 
-csv_dir = Path(__file__).with_name('surfaces')
+# store CSV files in a dedicated folder for American option results
+csv_dir = Path(__file__).with_name('american_surfaces')
 csv_dir.mkdir(exist_ok=True)
 
 strikes = [60, 70, 80, 90, 100, 110, 120, 130, 140]

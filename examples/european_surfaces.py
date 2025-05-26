@@ -27,7 +27,7 @@ T_max = 2.0
 dt = 0.5 / n_steps
 
 # folder where CSV files will be stored
-csv_dir = Path(__file__).with_name('surfaces')
+csv_dir = Path(__file__).with_name('european_surfaces')
 csv_dir.mkdir(exist_ok=True)
 
 strikes = [60, 70, 80, 90, 100, 110, 120, 130, 140]
