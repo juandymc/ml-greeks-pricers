@@ -18,11 +18,11 @@ class AmericanAsset(EuropeanAsset):
     def simulate(self, T, market: MarketData, *, use_cache=True) -> tf.Tensor:
         """Return the full simulated path up to maturity ``T``."""
 
-        # ``self.n_steps`` already stores the integer number of steps derived
-        # from ``T`` and ``dt`` at construction time.  Using it directly avoids
-        # calling ``tf.get_static_value`` on symbolic tensors, which fails when
-        # ``simulate`` is invoked from a ``tf.function``.
-        steps = self.n_steps
+        # Number of time steps for the requested maturity ``T``.  ``T`` can be a
+        # ``tf.Tensor`` when ``simulate`` is invoked from a compiled function, so
+        # we compute the integer number of steps using TensorFlow ops rather than
+        # relying on ``tf.get_static_value``.
+        steps = tf.cast(tf.round(T / self.dt), tf.int32)
 
         if use_cache and self._cache_valid and steps <= self._cached_steps:
             if steps == 0:
@@ -87,7 +87,8 @@ class MCAmericanOption:
     def _compute_price_and_grads(self):
         dt = self.asset.dt
         df = tf.exp(-self.market.r * dt)
-        n_steps = self.asset.n_steps
+        # number of time steps corresponding to the option maturity
+        n_steps = tf.cast(tf.round(self.T / dt), tf.int32)
 
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(self.asset.S0)
