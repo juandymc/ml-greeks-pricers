@@ -1,6 +1,8 @@
 import tensorflow as tf
+from ml_greeks_pricers.common.constants import USE_XLA
+
 tf.keras.backend.set_floatx('float64')
-@tf.function(reduce_retracing=True)
+@tf.function(jit_compile=USE_XLA, reduce_retracing=True)
 def bs_price(
     S:     tf.Tensor,
     K:     tf.Tensor,

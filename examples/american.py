@@ -1,7 +1,10 @@
+import time
+from datetime import datetime
+from pathlib import Path
 import tensorflow as tf
 
 from ml_greeks_pricers.volatility.discrete import DupireLocalVol
-from ml_greeks_pricers.pricers.european import MarketData, EuropeanAsset, MCEuropeanOption
+from ml_greeks_pricers.pricers.european import MarketData
 from ml_greeks_pricers.pricers.american import AmericanAsset, MCAmericanOption
 
 
@@ -31,24 +34,39 @@ if __name__ == "__main__":
         [0.266, 0.251, 0.238, 0.227, 0.218, 0.211, 0.206, 0.203, 0.202],
         [0.269, 0.254, 0.241, 0.230, 0.221, 0.214, 0.209, 0.206, 0.205],
     ]
-    dupire_lv = DupireLocalVol(strikes, mats, iv, S0, r, q)
-    dupire_lv = 0.212  # constant volatility as reference
-
-    market = MarketData(r, dupire_lv)
 
     dt = T / n_steps
-    asset_eur = EuropeanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
-    mc_eur = MCEuropeanOption(asset_eur, market, K, T, is_call=False)
+    log_path = Path(__file__).with_name("execution.log")
 
-    price_eur = mc_eur()
-    delta_eur = mc_eur.delta()
-    vega_eur = mc_eur.vega()
-    tf.print("European:", price_eur, "Delta:", delta_eur, "Vega:", vega_eur)
+    # ---- constant volatility ----
+    market_flat = MarketData(r, 0.212)
+    asset_flat = AmericanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
+    mc_flat = MCAmericanOption(asset_flat, market_flat, K, T, is_call=False)
+    mc_flat()  # warm-up
+    start = time.perf_counter()
+    price_flat = mc_flat()
+    delta_flat = mc_flat.delta()
+    vega_flat = mc_flat.vega()
+    elapsed_flat = time.perf_counter() - start
+    tf.print("Flat", price_flat, delta_flat, vega_flat)
 
-    asset_amer = AmericanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
-    mc_amer = MCAmericanOption(asset_amer, market, K, T, is_call=False)
+    # ---- Dupire local-vol ----
+    dupire_lv = DupireLocalVol(strikes, mats, iv, S0, r, q)
+    market_dup = MarketData(r, dupire_lv)
+    asset_dup = AmericanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
+    mc_dup = MCAmericanOption(asset_dup, market_dup, K, T, is_call=False)
+    mc_dup()  # warm-up
+    start = time.perf_counter()
+    price_dup = mc_dup()
+    delta_dup = mc_dup.delta()
+    vega_dup = mc_dup.vega()
+    elapsed_dup = time.perf_counter() - start
+    tf.print("Dupire", price_dup, delta_dup, vega_dup)
 
-    price_amer = mc_amer()
-    delta_amer = mc_amer.delta()
-    vega_amer = mc_amer.vega()
-    tf.print("American:", price_amer, "Delta:", delta_amer, "Vega:", vega_amer)
+    with log_path.open("a") as f:
+        f.write(
+            f"{datetime.now().isoformat()} american n_steps={n_steps} n_paths={n_paths} "
+            f"flat_time={elapsed_flat:.4f} dupire_time={elapsed_dup:.4f} "
+            f"flat_price={float(price_flat):.6f} flat_delta={float(delta_flat):.6f} flat_vega={float(vega_flat):.6f} "
+            f"dupire_price={float(price_dup):.6f} dupire_delta={float(delta_dup):.6f} dupire_vega={float(vega_dup):.6f}\n"
+        )
