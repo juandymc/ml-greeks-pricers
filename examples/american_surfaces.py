@@ -43,7 +43,7 @@ market_flat = MarketData(r, iv_vol)
 dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
 market_dup = MarketData(r, dup)
 
-def surface(market, use_cache=True):
+def surface(market, use_cache=False):
     """Return price, delta and vega surfaces for ``market``."""
     asset = AmericanAsset(
         S0,

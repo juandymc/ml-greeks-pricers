@@ -20,8 +20,8 @@ from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 # parameters copied from examples/european.py
 S0, r, q = 110., 0.06, 0.
 iv_vol = 0.212
-n_paths = 50_000
-n_steps = 100
+n_paths = 50_000#10#
+n_steps = 100#10#
 T_max = 2.0
 # reuse same dt as examples/european.py (0.5/100)
 dt = 0.5 / n_steps
@@ -144,7 +144,7 @@ def save_surfaces(prefix, prices, deltas, vegas):
 if __name__ == '__main__':
     prices_ana, deltas_ana, vegas_ana = analytical_surface()
     prices_flat, deltas_flat, vegas_flat = measure(market_flat, 'flat', True)
-    prices_dup, deltas_dup, vegas_dup = measure(market_dup, 'dupire', True)
+    prices_dup, deltas_dup, vegas_dup = measure(market_dup, 'dupire', False)
 
     diff_flat_p = 100.0 * (prices_flat - prices_ana) / prices_ana
     diff_dup_p = 100.0 * (prices_dup - prices_ana) / prices_ana

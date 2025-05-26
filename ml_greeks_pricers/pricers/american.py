@@ -14,16 +14,14 @@ from ml_greeks_pricers.common.constants import USE_XLA
 class AmericanAsset(EuropeanAsset):
     """Simulates full price paths for the underlying asset."""
 
-    @tf.function(jit_compile=True, reduce_retracing=True)
+    @tf.function(reduce_retracing=True)
     def simulate(self, T, market: MarketData, *, use_cache=True) -> tf.Tensor:
         """Return the full simulated path up to maturity ``T``."""
 
-        # Number of time steps for the requested maturity ``T``.  ``T`` can be a
-        # ``tf.Tensor`` when ``simulate`` is invoked from a compiled function, so
-        # we compute the integer number of steps using TensorFlow ops rather than
-        # relying on ``tf.get_static_value``.
+        # Number of time steps for the requested maturity ``T``.
         steps = tf.cast(tf.round(T / self.dt), tf.int32)
 
+        # Retrieve or generate Brownian increments
         if use_cache and self._cache_valid and steps <= self._cached_steps:
             if steps == 0:
                 S = tf.fill([self.n_paths], self.S0)
@@ -36,26 +34,30 @@ class AmericanAsset(EuropeanAsset):
                 self._cache_valid = True
                 self._cached_steps = steps
 
+        # Time grid for sigma lookup
         times = tf.range(steps, dtype=self.dtype) * self.dt
-        S = tf.fill([self.n_paths], self.S0)
-        path = tf.TensorArray(self.dtype, size=steps + 1)
-        path = path.write(0, S)
+        S0_vec = tf.fill([self.n_paths], self.S0)
 
-        def step(prev, elems):
-            dWi, tc = elems
+        # Define per-step evolution
+        def one_step(prev_S, elems):
+            dWi, tci = elems
             if market._flat_sigma is not None:
                 sig = tf.fill([self.n_paths], market._flat_sigma)
             else:
                 sig = market._sigma_fn(
-                    tf.stack([tf.fill([self.n_paths], tc), prev], axis=1)
+                    tf.stack([tf.fill([self.n_paths], tci), prev_S], axis=1)
                 )
-            return prev * tf.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dWi)
+            return prev_S * tf.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dWi)
 
-        for i in tf.range(steps):
-            S = step(S, (dW[i], times[i]))
-            path = path.write(i + 1, S)
-
-        return path.stack()
+        # Use tf.scan to build the path without XlaDynamicUpdateSlice
+        path_body = tf.scan(
+            one_step,
+            elems=(dW, times),
+            initializer=S0_vec
+        )
+        # Prepend initial price S0 at t=0
+        full_path = tf.concat([tf.expand_dims(S0_vec, 0), path_body], axis=0)
+        return full_path
 
 
 class MCAmericanOption:
@@ -83,7 +85,7 @@ class MCAmericanOption:
         self._last_delta = None
         self._last_vega = None
 
-    @tf.function(jit_compile=USE_XLA, reduce_retracing=True)
+    @tf.function(reduce_retracing=True)
     def _compute_price_and_grads(self):
         dt = self.asset.dt
         df = tf.exp(-self.market.r * dt)
@@ -97,16 +99,21 @@ class MCAmericanOption:
             elif self.market._dupire_grid is not None:
                 tape.watch(self.market._dupire_grid)
 
+            # Simulate asset paths
             paths = self.asset.simulate(self.T, self.market, use_cache=self.use_cache)
 
+            # Payoff matrix [time, path]
             payoff = tf.where(
                 self.is_call,
                 tf.nn.relu(paths - self.K),
                 tf.nn.relu(self.K - paths),
             )
 
+            # Cashflows at maturity
             CF = payoff[-1]
             eps = tf.cast(1e-6, self.asset.dtype)
+
+            # Backward induction for early exercise
             for t in tf.range(n_steps - 1, 0, -1):
                 discounted = CF * df
                 St = paths[t]
@@ -125,6 +132,7 @@ class MCAmericanOption:
 
             price = tf.reduce_mean(CF * df)
 
+        # Compute Greeks
         delta = tape.gradient(price, self.asset.S0)
         if delta is None:
             delta = tf.zeros_like(self.asset.S0)
@@ -161,4 +169,3 @@ class MCAmericanOption:
 
 
 __all__ = ["MarketData", "AmericanAsset", "MCAmericanOption"]
-
