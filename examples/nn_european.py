@@ -10,7 +10,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 
-
+# ----------------------------------------------------------------------------- #
+# Model building
+# ----------------------------------------------------------------------------- #
 def vanilla_net(input_dim, hidden_units, hidden_layers, output_dim=1):
     net = tf.keras.Sequential()
     net.add(Input((input_dim,)))
@@ -19,363 +21,164 @@ def vanilla_net(input_dim, hidden_units, hidden_layers, output_dim=1):
     net.add(Dense(output_dim))
     return net
 
-"""| Parámetro       | ¿Qué representa?                                                                                                                                                                                                                                     | Ejemplo en Differential-ML                                                                          |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `input_dim`     | **Tamaño del vector de entrada** que la red recibirá en cada   `call`. Aquí será la longitud del estado $x=[S_{T_1},U_{T_1}]$. <br>Si tu modelo tiene $n_0$ variables de mercado y $n_1$ variables de transacción, entonces `input_dim = n_0 + n_1`. | • Europea simple: $n_0=1,\;n_1=0$ ⇒ `input_dim=1`. <br>• Americana con flag: $1+1$ ⇒ `input_dim=2`. |
-| `hidden_units`  | Número de **neuronas** (anchura) en **cada** capa oculta.  Todas las ocultas usan ese mismo valor.                                                                                                                                                   | El paper original usa 20; el repo de pmdanton usa 64.                                               |
-| `hidden_layers` | Número de **capas ocultas** que se van a apilar en el bucle `for`. Cada una tendrá `hidden_units` neuronas y activación *softplus*.                                                                                                                  | 4 es la cifra habitual en los ejemplos de Huge-Savine.                                              |
-| `output_dim`    | Dimensión de la capa de salida. En pricing suele ser 1 (un único precio). Podrías poner >1 si quisieras predecir varios valores simultáneamente.                                                                                                     | Se deja por defecto en 1 (`output_dim=1`).                                                          |
-
-"""
-
 class TwinNetwork(tf.keras.Model):
-
-    def __init__(self, vanilla_net):
-        super(TwinNetwork, self).__init__()
-        self.vanilla_net = vanilla_net
-
-    def call(self, inputs):
+    """Returns value and first derivatives."""
+    def __init__(self, vanilla):
+        super().__init__()
+        self.vanilla = vanilla
+    def call(self, x):
         with tf.GradientTape() as tape:
-            tape.watch(inputs)
-            predictions = self.vanilla_net(inputs)
-        derivs_predictions = tape.gradient(predictions, inputs)
-        return predictions, derivs_predictions
+            tape.watch(x)
+            y = self.vanilla(x)
+        dy = tape.gradient(y, x)
+        return y, dy
 
 class WeightedMeanSquaredError(tf.keras.losses.Loss):
-    def __init__(self, lambda_j):
-        super(WeightedMeanSquaredError, self).__init__()
-        self.lambda_j = tf.reshape(lambda_j, (1,-1))
-
+    """MSE weighted by λⱼ."""
+    def __init__(self, lam):          # lam shape (features,)
+        super().__init__()
+        self.lam = tf.reshape(lam, (1, -1))
     def call(self, y_true, y_pred):
-        return tf.keras.losses.MSE(self.lambda_j*y_true, self.lambda_j*y_pred)
+        y_true = tf.cast(y_true, y_pred.dtype)
+        lam    = tf.cast(self.lam,  y_pred.dtype)
+        diff   = lam * (y_true - y_pred)
+        return tf.reduce_mean(tf.square(diff), axis=-1)
 
-class TwinScaler():
+class TwinScaler:
+    """Standardises (x, y) and rescales dy/dx consistently."""
     def __init__(self):
-        self.x_scaler = StandardScaler()
-        self.y_scaler = StandardScaler()
-
+        self.xs = StandardScaler()
+        self.ys = StandardScaler()
+    @staticmethod
+    def _f32(a): return tf.cast(a, tf.float32)
     def fit(self, x, y):
-        self.x_scaler.fit(x)
-        self.y_scaler.fit(y)
-        self.dy_dx_scale = self.x_scaler.scale_ / self.y_scaler.scale_
+        self.xs.fit(x); self.ys.fit(y)
+        self.dy_scale = self.xs.scale_ / self.ys.scale_
+    def transform(self, x, y, dy):
+        return (self._f32(self.xs.transform(x)),
+                self._f32(self.ys.transform(y)),
+                self._f32(dy * self.dy_scale))
+    def x_transform(self, x):  return self._f32(self.xs.transform(x))
+    def inverse(self, y_s, dy_s):
+        return (self.ys.inverse_transform(y_s),
+                dy_s / self.dy_scale)
 
-    def transform(self, x, y, dy_dx):
-        # make sur to cast to Tensorflow float32, to avoid conflict with NumPy float64
-        x_scaled = self.x_scaler.transform(x)
-        x_scaled = tf.cast(x_scaled, dtype=tf.float32)
-        y_scaled = self.y_scaler.transform(y)
-        y_scaled = tf.cast(y_scaled, dtype=tf.float32)
-        dy_dx_scaled = dy_dx * self.dy_dx_scale
-        dy_dx_scaled = tf.cast(dy_dx_scaled, dtype=tf.float32)
-        return (x_scaled, y_scaled, dy_dx_scaled)
+# ----------------------------------------------------------------------------- #
+# Helpers
+# ----------------------------------------------------------------------------- #
+def lambda_j(dy_s):       return 1.0 / tf.math.sqrt(tf.reduce_mean(tf.square(dy_s), 0))
+def alpha_beta(n, l=1):   return [1.0/(1+l*n), l*n/(1+l*n)]
 
-    def x_transform(self, x):
-        x_scaled = self.x_scaler.transform(x)
-        x_scaled = tf.cast(x_scaled, dtype=tf.float32)
-        return x_scaled
+def dataset(x, y, dy, bs):
+    return tf.data.Dataset.from_tensor_slices((x, (y, dy))).batch(bs).repeat()
 
-    def inverse_transform(self, y_scaled, dy_dx_scaled):
-        y = self.y_scaler.inverse_transform(y_scaled)
-        dy_dx = dy_dx_scaled / self.dy_dx_scale
-        return (y, dy_dx)
+def lr_callback(schedule, epochs):
+    t, r = zip(*schedule)
+    f = lambda e: np.interp(e/(epochs-1), t, r)
+    return LearningRateScheduler(f)
 
-def calc_lambda_j(dy_dx_scaled):
-    return 1.0/tf.math.sqrt(tf.reduce_mean(tf.square(dy_dx_scaled), axis=0))
-
-def calc_alpha_beta(n, lambda_hyperparameter=1):
-    alpha = 1/(1+lambda_hyperparameter*n)
-    beta = 1-alpha
-    return [alpha, beta]
-
-def build_dataset(x, y, dydx, batch_size):
-    inputs = tf.data.Dataset.from_tensor_slices(x)
-    outputs = tf.data.Dataset.from_tensor_slices((y, dydx))
-    dataset = tf.data.Dataset.zip((inputs, outputs)).batch(batch_size).repeat()
-    return dataset
-
-def build_scheduler_callback(learning_rate_schedule, epochs):
-    lr_schedule_epochs = [z[0] for z in learning_rate_schedule]
-    lr_schedule_rates = [z[1] for z in learning_rate_schedule]
-    lr_schedule_fn = lambda t: np.interp(t/(epochs-1), lr_schedule_epochs, lr_schedule_rates)
-    return LearningRateScheduler(lr_schedule_fn)
-
-class Neural_Approximator():
-    def __init__(self, x_raw, y_raw, dydx_raw=None):
-        self.x_raw = x_raw
-        self.y_raw = y_raw
-        if dydx_raw is None:
-            self.dydx_raw = tf.zeros((y_raw.shape[0], y_raw.shape[1], x_raw.shape[1]))
-        else:
-            self.dydx_raw = dydx_raw
+# ----------------------------------------------------------------------------- #
+# Trainer / predictor
+# ----------------------------------------------------------------------------- #
+class NeuralApproximator:
+    def __init__(self, x, y, dy=None):
+        self.x_raw, self.y_raw = x, y
+        self.dy_raw = tf.zeros((y.shape[0], y.shape[1], x.shape[1]), tf.float32) if dy is None else dy
         self.scaler = TwinScaler()
 
-    def prepare(self, m, differential, lam=1, hidden_units=20, hidden_layers=4, *args, **kwargs):
+    def prepare(self, m, diff, lam=1, hu=20, hl=4):
         self.scaler.fit(self.x_raw[:m], self.y_raw[:m])
-        self.x, self.y, self.dydx = self.scaler.transform(self.x_raw[:m], self.y_raw[:m], self.dydx_raw[:m])
-        self.m, self.n = self.x.shape
-        self.lambda_j = calc_lambda_j(self.dydx)
-        net = vanilla_net(self.n, hidden_units, hidden_layers)
-        self.twin_net = TwinNetwork(net)
-        if differential:
-            self.alpha_beta = calc_alpha_beta(self.n, lam)
-        else:
-            self.alpha_beta = [1, 0]
+        self.x_s, self.y_s, self.dy_s = self.scaler.transform(self.x_raw[:m],
+                                                              self.y_raw[:m],
+                                                              self.dy_raw[:m])
+        n = self.x_s.shape[1]
+        self.twin = TwinNetwork(vanilla_net(n, hu, hl))
+        self.lam_j = lambda_j(self.dy_s)
+        self.loss_w = alpha_beta(n, lam) if diff else [1, 0]
 
-    def train(self,
-          description="training",
-          # training params
-          reinit=True,
-          epochs=100,
-          # one-cycle learning rate schedule
-          learning_rate_schedule=[
-              (0.0, 1.0e-8),
-              (0.2, 0.1),
-              (0.6, 0.01),
-              (0.9, 1.0e-6),
-              (1.0, 1.0e-8)],
-          batches_per_epoch=16,
-          min_batch_size=256, *args, **kwargs):
+    def train(self, epochs=100, lr_sched=[(0,1e-8),(0.2,1e-1),(0.6,1e-2),(0.9,1e-6),(1,1e-8)],
+              steps=16, bs=256):
+        ds = dataset(self.x_s, self.y_s, self.dy_s, bs)
+        self.twin.compile(optimizer="adam",
+                          loss=["mse", WeightedMeanSquaredError(self.lam_j)],
+                          loss_weights=self.loss_w)
+        self.twin.fit(ds, epochs=epochs, steps_per_epoch=steps,
+                      callbacks=[lr_callback(lr_sched, epochs)], verbose=0)
 
-        # build the dataset
-        dataset = build_dataset(self.x, self.y, self.dydx, min_batch_size)
+    def predict(self, x):
+        x_s = self.scaler.x_transform(x)
+        y_s, dy_s = self.twin.predict(x_s, verbose=0)
+        return self.scaler.inverse(y_s, dy_s)
 
-        # Build the weighted mean square error using lambda_j weights
-        weighted_mse = WeightedMeanSquaredError(self.lambda_j)
-        self.twin_net.compile(optimizer="adam", loss=["mse", weighted_mse], loss_weights=self.alpha_beta)
-        # We use Keras LearningRateScheduler callback for the one-cycle learning rate schedule
-        lr_scheduler = build_scheduler_callback(learning_rate_schedule, epochs)
-        self.training_log = self.twin_net.fit(dataset, epochs=epochs, steps_per_epoch=batches_per_epoch, callbacks=[lr_scheduler], verbose=0)
+# ----------------------------------------------------------------------------- #
+# Black-Scholes generator
+# ----------------------------------------------------------------------------- #
+def bs_price(s, k, v, T):
+    d1 = (np.log(s/k)+.5*v*v*T)/(v*np.sqrt(T)); d2 = d1 - v*np.sqrt(T)
+    return s*norm.cdf(d1) - k*norm.cdf(d2)
+def bs_delta(s, k, v, T):
+    d1 = (np.log(s/k)+.5*v*v*T)/(v*np.sqrt(T)); return norm.cdf(d1)
+def bs_vega(s, k, v, T):
+    d1 = (np.log(s/k)+.5*v*v*T)/(v*np.sqrt(T)); return s*np.sqrt(T)*norm.pdf(d1)
 
-    def predict_values(self, x):
-        x_scaled = self.scaler.x_transform(x)
-        y_scaled, _ = self.twin_net.predict(x_scaled)
-        y = self.scaler.y_scaler.inverse_transform(y_scaled)
-        return y
-
-    def predict_values_and_derivs(self, x):
-        x_scaled = self.scaler.x_transform(x)
-        pred_scaled = self.twin_net.predict(x_scaled)
-        return self.scaler.inverse_transform(*pred_scaled)
-
-import tensorflow as tf
-print("Using TensorFlow version", tf.__version__)
-
-from tensorflow.keras.layers import Dense, Input
-from tensorflow.keras.callbacks import LearningRateScheduler
-
-from sklearn.preprocessing import StandardScaler
-from scipy.stats import norm
-import matplotlib.pyplot as plt
-import numpy as np
-import time
-
-# helper analytics
-def bsPrice(spot, strike, vol, T):
-    d1 = (np.log(spot/strike) + vol * vol * T) / vol / np.sqrt(T)
-    d2 = d1 - vol * np.sqrt(T)
-    return spot * norm.cdf(d1) - strike * norm.cdf(d2)
-
-def bsDelta(spot, strike, vol, T):
-    d1 = (np.log(spot/strike) + vol * vol * T) / vol / np.sqrt(T)
-    return norm.cdf(d1)
-
-def bsVega(spot, strike, vol, T):
-    d1 = (np.log(spot/strike) + vol * vol * T) / vol / np.sqrt(T)
-    return spot * np.sqrt(T) * norm.pdf(d1)
-#
-
-# main class
 class BlackScholes:
-
-    def __init__(self,
-                 vol=0.2,
-                 T1=1,
-                 T2=2,
-                 K=1.10,
-                 volMult=1.5):
-
-        self.spot = 1
-        self.vol = vol
-        self.T1 = T1
-        self.T2 = T2
-        self.K = K
-        self.volMult = volMult
-
-    # training set: returns S1 (mx1), C2 (mx1) and dC2/dS1 (mx1)
-    def trainingSet(self, m, anti=True, seed=None):
-
+    def __init__(self, vol=.2,T1=1,T2=2,K=1.1,vm=1.5):
+        self.s0, self.v, self.T1, self.T2, self.K, self.vm = 1., vol, T1, T2, K, vm
+    def training_set(self, m, anti=True, seed=None):
         np.random.seed(seed)
-
-        # 2 sets of normal returns
-        returns = np.random.normal(size=[m, 2])
-
-        # SDE
-        vol0 = self.vol * self.volMult
-        R1 = np.exp(-0.5*vol0*vol0*self.T1 + vol0*np.sqrt(self.T1)*returns[:,0])
-        R2 = np.exp(-0.5*self.vol*self.vol*(self.T2-self.T1) \
-                    + self.vol*np.sqrt(self.T2-self.T1)*returns[:,1])
-        S1 = self.spot * R1
-        S2 = S1 * R2
-
-        # payoff
-        pay = np.maximum(0, S2 - self.K)
-
-        # two antithetic paths
+        r = np.random.normal(size=(m,2))
+        v0 = self.v*self.vm
+        R1 = np.exp(-.5*v0*v0*self.T1 + v0*np.sqrt(self.T1)*r[:,0])
+        R2 = np.exp(-.5*self.v*self.v*(self.T2-self.T1) + self.v*np.sqrt(self.T2-self.T1)*r[:,1])
+        S1, S2 = self.s0*R1, self.s0*R1*R2
+        pay = np.maximum(0., S2-self.K)
         if anti:
-
-            R2a = np.exp(-0.5*self.vol*self.vol*(self.T2-self.T1) \
-                    - self.vol*np.sqrt(self.T2-self.T1)*returns[:,1])
-            S2a = S1 * R2a
-            paya = np.maximum(0, S2a - self.K)
-
-            X = S1
-            Y = 0.5 * (pay + paya)
-
-            # differentials
-            Z1 =  np.where(S2 > self.K, R2, 0.0).reshape((-1,1))
-            Z2 =  np.where(S2a > self.K, R2a, 0.0).reshape((-1,1))
-            Z = 0.5 * (Z1 + Z2)
-
-        # standard
+            R2a = np.exp(-.5*self.v*self.v*(self.T2-self.T1) - self.v*np.sqrt(self.T2-self.T1)*r[:,1])
+            S2a = S1*R2a; paya = np.maximum(0., S2a-self.K)
+            Y = .5*(pay+paya)
+            Z = .5*(np.where(S2>self.K,R2,0.).reshape(-1,1)+
+                    np.where(S2a>self.K,R2a,0.).reshape(-1,1))
         else:
+            Y, Z = pay, np.where(S2>self.K,R2,0.).reshape(-1,1)
+        return (S1.reshape(-1,1).astype(np.float32),
+                Y.reshape(-1,1).astype(np.float32),
+                Z.astype(np.float32))
+    def test_set(self, lo=.35, hi=1.65, n=100):
+        s = np.linspace(lo,hi,n,dtype=np.float32).reshape(-1,1); T=self.T2-self.T1
+        return (s, s,
+                bs_price(s,self.K,self.v,T).astype(np.float32).reshape(-1,1),
+                bs_delta(s,self.K,self.v,T).astype(np.float32).reshape(-1,1),
+                bs_vega (s,self.K,self.v,T).astype(np.float32).reshape(-1,1))
 
-            X = S1
-            Y = pay
+# ----------------------------------------------------------------------------- #
+# Experiment
+# ----------------------------------------------------------------------------- #
+def run_test(gen, sizes, n_test, seed):
+    x_tr, y_tr, dy_tr = gen.training_set(max(sizes), seed=seed)
+    x_te, x_ax, y_te, dy_te, _ = gen.test_set(n=n_test)
+    reg = NeuralApproximator(x_tr, y_tr, dy_tr)
+    v_pred, d_pred = {}, {}
+    for sz in sizes:
+        reg.prepare(sz, diff=False); reg.train(); v,d=reg.predict(x_te)
+        v_pred[("std",sz)], d_pred[("std",sz)] = v, d[:,0]
+        reg.prepare(sz, diff=True);  reg.train(); v,d=reg.predict(x_te)
+        v_pred[("diff",sz)], d_pred[("diff",sz)] = v, d[:,0]
+    return x_ax, y_te, dy_te[:,0], v_pred, d_pred
 
-            # differentials
-            Z =  np.where(S2 > self.K, R2, 0.0).reshape((-1,1))
+def plot(title, pred, x, y, sizes, ylabel):
+    rows=len(sizes); fig,ax=plt.subplots(rows,2,figsize=(9,4*rows))
+    for i,sz in enumerate(sizes):
+        for j,kind in enumerate(("std","diff")):
+            ax[i,j].plot(x*100, pred[(kind,sz)]*100,'co',ms=2,mfc='w',label="pred")
+            ax[i,j].plot(x*100, y*100,'r.',ms=.5,label="target")
+            ax[i,j].set_xlabel("spot (%)"); ax[i,j].set_ylabel(ylabel)
+            if i==0: ax[i,j].set_title("standard" if kind=="std" else "differential")
+            ax[i,j].legend(prop={"size":8})
+    plt.suptitle(title); plt.tight_layout(); plt.show()
 
-        return X.reshape([-1,1]), Y.reshape([-1,1]), Z.reshape([-1,1])
-
-    # test set: returns a grid of uniform spots
-    # with corresponding ground true prices, deltas and vegas
-    def testSet(self, lower=0.35, upper=1.65, num=100, seed=None):
-
-        spots = np.linspace(lower, upper, num).reshape((-1, 1))
-        # compute prices, deltas and vegas
-        prices = bsPrice(spots, self.K, self.vol, self.T2 - self.T1).reshape((-1, 1))
-        deltas = bsDelta(spots, self.K, self.vol, self.T2 - self.T1).reshape((-1, 1))
-        vegas = bsVega(spots, self.K, self.vol, self.T2 - self.T1).reshape((-1, 1))
-        return spots, spots, prices, deltas, vegas
-
-def test(generator,
-         sizes,
-         nTest,
-         simulSeed=None,
-         testSeed=None,
-         weightSeed=None,
-         deltidx=0):
-
-    # simulation
-    print("simulating training, valid and test sets")
-    xTrain, yTrain, dydxTrain = generator.trainingSet(max(sizes), seed=simulSeed)
-    xTest, xAxis, yTest, dydxTest, vegas = generator.testSet(num=nTest, seed=testSeed)
-    print("done")
-
-    # neural approximator
-    print("initializing neural appropximator")
-    regressor = Neural_Approximator(xTrain, yTrain, dydxTrain)
-    print("done")
-
-    predvalues = {}
-    preddeltas = {}
-    for size in sizes:
-
-        print("\nsize %d" % size)
-        regressor.prepare(size, False, weight_seed=weightSeed)
-
-        t0 = time.time()
-        regressor.train("standard training")
-        predictions, deltas = regressor.predict_values_and_derivs(xTest)
-        predvalues[("standard", size)] = predictions
-        preddeltas[("standard", size)] = deltas[:, deltidx]
-        t1 = time.time()
-
-        regressor.prepare(size, True, weight_seed=weightSeed)
-
-        t0 = time.time()
-        regressor.train("differential training")
-        predictions, deltas = regressor.predict_values_and_derivs(xTest)
-        predvalues[("differential", size)] = predictions
-        preddeltas[("differential", size)] = deltas[:, deltidx]
-        t1 = time.time()
-
-    return xAxis, yTest, dydxTest[:, deltidx], vegas, predvalues, preddeltas
-
-def graph(title,
-          predictions,
-          xAxis,
-          xAxisName,
-          yAxisName,
-          targets,
-          sizes,
-          computeRmse=False,
-          weights=None):
-
-    numRows = len(sizes)
-    numCols = 2
-
-    fig, ax = plt.subplots(numRows, numCols, squeeze=False)
-    fig.set_size_inches(4 * numCols + 1.5, 4 * numRows)
-
-    for i, size in enumerate(sizes):
-        ax[i,0].annotate("size %d" % size, xy=(0, 0.5),
-          xytext=(-ax[i,0].yaxis.labelpad-5, 0),
-          xycoords=ax[i,0].yaxis.label, textcoords='offset points',
-          ha='right', va='center')
-
-    ax[0,0].set_title("standard")
-    ax[0,1].set_title("differential")
-
-    for i, size in enumerate(sizes):
-        for j, regType, in enumerate(["standard", "differential"]):
-
-            if computeRmse:
-                errors = 100 * (predictions[(regType, size)] - targets)
-                if weights is not None:
-                    errors /= weights
-                rmse = np.sqrt((errors ** 2).mean(axis=0))
-                t = "rmse %.2f" % rmse
-            else:
-                t = xAxisName
-
-            ax[i,j].set_xlabel(t)
-            ax[i,j].set_ylabel(yAxisName)
-
-            ax[i,j].plot(xAxis*100, predictions[(regType, size)]*100, 'co', \
-                         markersize=2, markerfacecolor='white', label="predicted")
-            ax[i,j].plot(xAxis*100, targets*100, 'r.', markersize=0.5, label='targets')
-
-            ax[i,j].legend(prop={'size': 8}, loc='upper left')
-
-    plt.tight_layout()
-    plt.subplots_adjust(top=0.9)
-    plt.suptitle("% s -- %s" % (title, yAxisName), fontsize=16)
-    plt.show()
-
-# simulation set sizes to perform
-sizes = [1024, 8192]
-
-# show delta?
-showDeltas = True
-
-# seed
-# simulSeed = 1234
-simulSeed = np.random.randint(0, 10000)
-print("using seed %d" % simulSeed)
-weightSeed = None
-
-# number of test scenarios
-nTest = 100
-
-# go
-generator = BlackScholes()
-xAxis, yTest, dydxTest, vegas, values, deltas = \
-    test(generator, sizes, nTest, simulSeed, None, weightSeed)
-
-# show predicitions
-graph("Black & Scholes", values, xAxis, "", "values", yTest, sizes, True)
-
-# show deltas
-graph("Black & Scholes", deltas, xAxis, "", "deltas", dydxTest, sizes, True)
-
+# ----------------------------------------------------------------------------- #
+if __name__ == "__main__":
+    sizes=[1024,8192]; n_test=100; seed=np.random.randint(1e4); print(f"seed {seed}")
+    gen=BlackScholes(); x,y,dy,vp,dp=run_test(gen,sizes,n_test,seed)
+    plot("Black-Scholes values", vp, x, y, sizes, "value")
+    plot("Black-Scholes deltas", dp, x, dy, sizes, "delta")
