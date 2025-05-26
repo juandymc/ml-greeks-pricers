@@ -24,7 +24,10 @@ dependencies = [
   "numpy>=1.26",
   "pandas>=2.2",
   "tensorflow>=2.16",
-  "QuantLib>=1.32"
+  "QuantLib>=1.32",
+  "scikit-learn>=1.4",
+  "scipy>=1.12",
+  "matplotlib>=3.8"
 ]
 
 # ── Optional extras (install with `pip install -e .[dev]`) ──────────────────
