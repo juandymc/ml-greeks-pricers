@@ -7,7 +7,7 @@ from .black_scholes import (
     bs_price,
     bs_delta,
     bs_vega,
-    BlackScholes,
+    MCEuropeanOption,
     NeuralApproximator,
     run_test,
 )
@@ -24,7 +24,7 @@ __all__ = [
     "bs_price",
     "bs_delta",
     "bs_vega",
-    "BlackScholes",
+    "MCEuropeanOption",
     "NeuralApproximator",
     "run_test",
 ]

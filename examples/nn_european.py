@@ -3,7 +3,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ml_greeks_pricers.nn import BlackScholes, run_test
+from ml_greeks_pricers.nn import MCEuropeanOption, run_test
+from ml_greeks_pricers.pricers.european import MarketData, EuropeanAsset
 
 
 def plot(title, pred, x, y, sizes, ylabel):
@@ -28,7 +29,9 @@ if __name__ == "__main__":
     n_test = 100
     seed = np.random.randint(1e4)
     print(f"seed {seed}")
-    gen = BlackScholes()
+    market = MarketData(0.0, 0.2)
+    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=1.0, n_paths=1)
+    gen = MCEuropeanOption(market, asset)
     x, y, dy, vp, dp = run_test(gen, sizes, n_test, seed)
     plot("Black-Scholes values", vp, x, y, sizes, "value")
     plot("Black-Scholes deltas", dp, x, dy, sizes, "delta")
