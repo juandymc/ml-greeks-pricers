@@ -3,9 +3,10 @@ import tensorflow as tf
 from ml_greeks_pricers.nn import (
     bs_price,
     bs_delta,
-    BlackScholes,
+    MCEuropeanOption,
     NeuralApproximator,
 )
+from ml_greeks_pricers.pricers.european import MarketData, EuropeanAsset
 
 
 def test_bs_functions():
@@ -16,7 +17,9 @@ def test_bs_functions():
 
 
 def test_training_set_reproducible():
-    gen = BlackScholes()
+    market = MarketData(0.0, 0.2)
+    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
+    gen = MCEuropeanOption(market, asset)
     x, y, dy = gen.training_set(3, seed=0)
     assert x.shape == (3, 1)
     assert y.shape == (3, 1)
@@ -28,7 +31,9 @@ def test_training_set_reproducible():
 
 def test_neural_approximator_shapes():
     tf.keras.backend.set_floatx("float32")
-    gen = BlackScholes()
+    market = MarketData(0.0, 0.2)
+    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
+    gen = MCEuropeanOption(market, asset)
     x, y, dy = gen.training_set(20, seed=1)
     na = NeuralApproximator(x, y, dy)
     na.prepare(10, diff=False, hu=2, hl=1)

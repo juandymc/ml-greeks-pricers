@@ -7,6 +7,7 @@ import tensorflow as tf
 from .scaler import TwinScaler
 from .models import vanilla_net, TwinNetwork, WeightedMeanSquaredError
 from .utils import lambda_j, alpha_beta, dataset, lr_callback
+from ..pricers.european import MarketData, EuropeanAsset
 
 
 # ---- analytical formulas ----------------------------------------------------
@@ -29,9 +30,28 @@ def bs_vega(s, k, v, T):
 
 # ---- data generator ---------------------------------------------------------
 
-class BlackScholes:
-    def __init__(self, vol: float = 0.2, T1: float = 1.0, T2: float = 2.0, K: float = 1.1, vm: float = 1.5):
-        self.s0, self.v, self.T1, self.T2, self.K, self.vm = 1.0, vol, T1, T2, K, vm
+class MCEuropeanOption:
+    """Simple Monte Carlo generator for European options."""
+
+    def __init__(
+        self,
+        market: MarketData,
+        asset: EuropeanAsset,
+        *,
+        T1: float = 1.0,
+        T2: float = 2.0,
+        K: float = 1.1,
+        vm: float = 1.5,
+    ) -> None:
+        if market._flat_sigma is None:
+            raise ValueError("Only flat volatility supported")
+
+        self.s0 = float(asset.S0.numpy())
+        self.v = float(market._flat_sigma.numpy())
+        self.T1 = T1
+        self.T2 = T2
+        self.K = K
+        self.vm = vm
 
     def training_set(self, m: int, anti: bool = True, seed: int | None = None):
         np.random.seed(seed)
@@ -115,7 +135,7 @@ class NeuralApproximator:
 
 # ---- experiment -------------------------------------------------------------
 
-def run_test(gen: BlackScholes, sizes, n_test: int, seed: int):
+def run_test(gen: MCEuropeanOption, sizes, n_test: int, seed: int):
     x_tr, y_tr, dy_tr = gen.training_set(max(sizes), seed=seed)
     x_te, x_ax, y_te, dy_te, _ = gen.test_set(n=n_test)
     reg = NeuralApproximator(x_tr, y_tr, dy_tr)
