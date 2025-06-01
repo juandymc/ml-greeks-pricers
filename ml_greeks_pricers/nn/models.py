@@ -28,7 +28,10 @@ class TwinNetwork(tf.keras.Model):
         return y, dy
 
     def get_config(self):
-        config = super().get_config()
+        """Return serializable config for the network."""
+        # Explicitly call the base class implementation instead of ``super()``
+        # to avoid ``TypeError`` when saving models in some environments.
+        config = tf.keras.Model.get_config(self)
         config["vanilla"] = tf.keras.utils.serialize_keras_object(self.vanilla)
         return config
 
