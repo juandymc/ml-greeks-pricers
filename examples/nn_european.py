@@ -36,13 +36,18 @@ if __name__ == "__main__":
     seed = np.random.randint(1e4)
     print(f"seed {seed}")
     market = MarketData(0.0, 0.2)
-    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=1.0, n_paths=1)
+    # Use an even number of paths and steps when antithetic sampling is enabled
+    # (default behaviour).  ``dt=0.5`` ensures that ``n_steps`` is even for
+    # ``T=1.0``.
+    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
     gen = MCEuropeanOption(market, asset)
     x, y, dy, vp, dp = run_test(gen, sizes, n_test, seed)
 
     T = gen.T2 - gen.T1
+    # ``run_test`` returns float32 arrays, while the analytical pricer uses
+    # float64.  Cast the input to avoid dtype mismatches.
     ana = AnalyticalEuropeanOption(
-        tf.constant(x, dtype=tf.float32),
+        tf.constant(x, dtype=tf.float64),
         gen.K,
         T,
         0.0,

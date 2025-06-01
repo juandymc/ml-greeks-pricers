@@ -15,7 +15,9 @@ if __name__ == "__main__":
     scaler_path = Path(__file__).with_suffix(".pkl")
 
     market = MarketData(0.0, 0.2)
-    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=1.0, n_paths=1)
+    # ``EuropeanAsset`` defaults to antithetic sampling.  Use an even number of
+    # paths and time steps to avoid assertion errors during initialisation.
+    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
     gen = MCEuropeanOption(market, asset)
 
     x_tr, y_tr, dy_tr = gen.training_set(4096, seed=0)
