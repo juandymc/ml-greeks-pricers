@@ -24,7 +24,8 @@ class AmericanAsset(EuropeanAsset):
         # Retrieve or generate Brownian increments
         if use_cache and self._cache_valid and steps <= self._cached_steps:
             if steps == 0:
-                S = tf.fill([self.n_paths], self.S0)
+                shape = tf.concat([[self.n_paths], tf.shape(self.S0)], 0)
+                S = tf.broadcast_to(self.S0, shape)
                 return tf.expand_dims(S, 0)
             dW = self._cached_dW[:steps]
         else:
@@ -36,17 +37,21 @@ class AmericanAsset(EuropeanAsset):
 
         # Time grid for sigma lookup
         times = tf.range(steps, dtype=self.dtype) * self.dt
-        S0_vec = tf.fill([self.n_paths], self.S0)
+        n_assets = tf.size(self.S0)
+        S0_vec = tf.broadcast_to(tf.reshape(self.S0, [1, -1]), [self.n_paths, n_assets])
+        dW = dW[:, :, None]
 
         # Define per-step evolution
         def one_step(prev_S, elems):
             dWi, tci = elems
             if market._flat_sigma is not None:
-                sig = tf.fill([self.n_paths], market._flat_sigma)
+                sig = tf.fill(tf.shape(prev_S), market._flat_sigma)
             else:
-                sig = market._sigma_fn(
-                    tf.stack([tf.fill([self.n_paths], tci), prev_S], axis=1)
+                flat_prev = tf.reshape(prev_S, [-1])
+                sig_flat = market._sigma_fn(
+                    tf.stack([tf.fill([tf.size(flat_prev)], tci), flat_prev], axis=1)
                 )
+                sig = tf.reshape(sig_flat, tf.shape(prev_S))
             return prev_S * tf.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dWi)
 
         # Use tf.scan to build the path without XlaDynamicUpdateSlice
@@ -57,6 +62,11 @@ class AmericanAsset(EuropeanAsset):
         )
         # Prepend initial price S0 at t=0
         full_path = tf.concat([tf.expand_dims(S0_vec, 0), path_body], axis=0)
+        full_path = tf.cond(
+            tf.equal(n_assets, 1),
+            lambda: tf.squeeze(full_path, axis=-1),
+            lambda: full_path,
+        )
         return full_path
 
 

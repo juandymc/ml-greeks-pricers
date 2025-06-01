@@ -217,7 +217,8 @@ class EuropeanAsset:
         if antithetic:
             _assert_even(self.n_steps, "n_steps")
 
-        self.S0 = tf.constant(S0, dtype=dtype)
+        # allow vector of initial spots
+        self.S0 = tf.convert_to_tensor(S0, dtype=dtype)
         self.q = tf.constant(q, dtype=dtype)
         self.n_paths = n_paths
         self.dt = tf.constant(float(T) / self.n_steps, dtype=dtype)
@@ -264,7 +265,8 @@ class EuropeanAsset:
 
         if use_cache and self._cache_valid and steps <= self._cached_steps:
             if steps == 0:
-                return tf.fill([self.n_paths], self.S0)
+                shape = tf.concat([[self.n_paths], tf.shape(self.S0)], 0)
+                return tf.broadcast_to(self.S0, shape)
             dW = self._cached_dW[:steps]
         else:
             dW = self._brownian(steps)
@@ -274,17 +276,23 @@ class EuropeanAsset:
                 self._cached_steps = steps
 
         times = tf.range(steps, dtype=self.dtype) * self.dt
-        S = tf.fill([self.n_paths], self.S0)
+        n_assets = tf.size(self.S0)
+        S = tf.broadcast_to(tf.reshape(self.S0, [1, -1]), [self.n_paths, n_assets])
+        dW = dW[:, :, None]
 
         def step(prev, elems):
             dWi, tc = elems
             if market._flat_sigma is not None:
-                sig = tf.fill([self.n_paths], market._flat_sigma)
+                sig = tf.fill(tf.shape(prev), market._flat_sigma)
             else:
-                sig = market._sigma_fn(
-                    tf.stack([tf.fill([self.n_paths], tc), prev], axis=1)
+                flat_prev = tf.reshape(prev, [-1])
+                sig_flat = market._sigma_fn(
+                    tf.stack([tf.fill([tf.size(flat_prev)], tc), flat_prev], axis=1)
                 )
-            return prev * tf.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dWi)
+                sig = tf.reshape(sig_flat, tf.shape(prev))
+            return prev * tf.exp(
+                (market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dWi
+            )
 
         if self.use_scan:
             path = tf.scan(step, (dW, times), initializer=S)
@@ -319,30 +327,22 @@ class MCEuropeanOption:
 
             ST = self.asset.simulate(self.T, self.market, use_cache=self.use_cache)
             payoff = tf.where(self.is_call, tf.nn.relu(ST - self.K), tf.nn.relu(self.K - ST))
-            price = self.market.discount_factor(self.T) * tf.reduce_mean(payoff)
+            price = self.market.discount_factor(self.T) * tf.reduce_mean(payoff, axis=0)
 
         delta = tape.gradient(price, self.asset.S0)
         if delta is None:
-            # When cached paths are reused ``delta`` can be ``None`` because the
-            # asset spot is not part of the current computation graph.  In that
-            # case the sensitivity is zero.
             delta = tf.zeros_like(self.asset.S0)
 
         if self.market._flat_sigma is not None:
             vega = tape.gradient(price, self.market._flat_sigma)
             if vega is None:
-                # If cached paths are reused the volatility parameter might not
-                # be watched by the gradient tape and the result is ``None``.
-                # Return a zero sensitivity in that case as well.
-                vega = tf.zeros_like(self.market._flat_sigma)
+                vega = tf.zeros_like(price)
         else:
             grid_grad = tape.gradient(price, self.market._dupire_grid)
             if grid_grad is None:
-                # When cached paths are reused ``grid_grad`` can be ``None``
-                # because the local vol grid was not part of the computation
-                # graph.  In that case the sensitivity is zero.
-                grid_grad = tf.zeros_like(self.market._dupire_grid)
-            vega = tf.reduce_sum(grid_grad)
+                vega = tf.zeros_like(price)
+            else:
+                vega = tf.reduce_sum(grid_grad, axis=list(range(1, grid_grad.shape.rank)))
         del tape
         return price, delta, vega
 
