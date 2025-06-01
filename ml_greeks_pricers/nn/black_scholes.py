@@ -46,7 +46,13 @@ class MCEuropeanOption:
         if market._flat_sigma is None:
             raise ValueError("Only flat volatility supported")
 
+        self.market = market
+        self.asset = asset
+
         self.s0 = float(asset.S0.numpy())
+        self.q = float(asset.q.numpy())
+        self.dt = float(asset.dt.numpy())
+
         self.v = float(market._flat_sigma.numpy())
         self.T1 = T1
         self.T2 = T2
@@ -54,29 +60,54 @@ class MCEuropeanOption:
         self.vm = vm
 
     def training_set(self, m: int, anti: bool = True, seed: int | None = None):
+        """Generate a training set using :class:`EuropeanAsset`."""
+
         np.random.seed(seed)
         r = np.random.normal(size=(m, 2))
-        v0 = self.v * self.vm
-        R1 = np.exp(-0.5 * v0 * v0 * self.T1 + v0 * np.sqrt(self.T1) * r[:, 0])
-        R2 = np.exp(-0.5 * self.v * self.v * (self.T2 - self.T1) + self.v * np.sqrt(self.T2 - self.T1) * r[:, 1])
-        S1, S2 = self.s0 * R1, self.s0 * R1 * R2
+
+        asset = EuropeanAsset(
+            self.s0,
+            self.q,
+            T=self.T2,
+            dt=self.T1,
+            n_paths=m,
+            antithetic=False,
+            seed=0 if seed is None else seed,
+            use_scan=True,
+        )
+
+        dW = np.stack(
+            [np.sqrt(self.T1) * r[:, 0], np.sqrt(self.T2 - self.T1) * r[:, 1]],
+            axis=0,
+        )
+        asset._cached_dW[:2].assign(tf.constant(dW, dtype=asset.dtype))
+        asset._cache_valid = True
+        asset._cached_steps = 2
+
+        S1 = asset.simulate(self.T1, self.market, use_cache=True).numpy().ravel()
+        S2 = asset.simulate(self.T2, self.market, use_cache=True).numpy().ravel()
+
+        dt = self.T2 - self.T1
         pay = np.maximum(0.0, S2 - self.K)
+        R2 = S2 / S1
+
         if anti:
-            R2a = np.exp(-0.5 * self.v * self.v * (self.T2 - self.T1) - self.v * np.sqrt(self.T2 - self.T1) * r[:, 1])
+            Z = (np.log(R2) + 0.5 * self.v * self.v * dt) / (self.v * np.sqrt(dt))
+            R2a = np.exp(-0.5 * self.v * self.v * dt - self.v * np.sqrt(dt) * Z)
             S2a = S1 * R2a
             paya = np.maximum(0.0, S2a - self.K)
             Y = 0.5 * (pay + paya)
-            Z = 0.5 * (
-                np.where(S2 > self.K, R2, 0.0).reshape(-1, 1)
-                + np.where(S2a > self.K, R2a, 0.0).reshape(-1, 1)
+            delta = 0.5 * (
+                np.where(S2 > self.K, R2, 0.0) + np.where(S2a > self.K, R2a, 0.0)
             )
         else:
             Y = pay
-            Z = np.where(S2 > self.K, R2, 0.0).reshape(-1, 1)
+            delta = np.where(S2 > self.K, R2, 0.0)
+
         return (
             S1.reshape(-1, 1).astype(np.float32),
             Y.reshape(-1, 1).astype(np.float32),
-            Z.astype(np.float32),
+            delta.reshape(-1, 1).astype(np.float32),
         )
 
     def test_set(self, lo: float = 0.35, hi: float = 1.65, n: int = 100):

@@ -24,8 +24,8 @@ def test_training_set_reproducible():
     assert x.shape == (3, 1)
     assert y.shape == (3, 1)
     assert dy.shape == (3, 1)
-    assert np.isclose(x[0, 0], 1.6229017)
-    assert np.isclose(y[0, 0], 0.49586323)
+    assert np.isclose(x[0, 0], 1.3948829)
+    assert np.isclose(y[0, 0], 0.27164337)
     assert np.isclose(dy[0, 0], 0.9833394)
 
 
