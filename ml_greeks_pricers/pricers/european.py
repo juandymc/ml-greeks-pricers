@@ -318,6 +318,10 @@ class MCEuropeanOption:
 
     @tf.function(jit_compile=True, reduce_retracing=True)
     def _compute_price_and_grads(self):
+        n_paths_per_opt = tf.cast(self.asset.n_paths, tf.int32)
+        n_opts = tf.cast(tf.size(self.K), tf.int32)
+        id_vector = tf.repeat(tf.range(n_opts, dtype=tf.int32), n_paths_per_opt)
+
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(self.asset.S0)
             if self.market._flat_sigma is not None:
@@ -326,8 +330,13 @@ class MCEuropeanOption:
                 tape.watch(self.market._dupire_grid)
 
             ST = self.asset.simulate(self.T, self.market, use_cache=self.use_cache)
-            payoff = tf.where(self.is_call, tf.nn.relu(ST - self.K), tf.nn.relu(self.K - ST))
-            price = self.market.discount_factor(self.T) * tf.reduce_mean(payoff, axis=0)
+            ST = tf.reshape(tf.transpose(ST), [-1])
+            K_paths = tf.repeat(self.K, n_paths_per_opt)
+            payoff = tf.where(self.is_call, tf.nn.relu(ST - K_paths), tf.nn.relu(K_paths - ST))
+            discount = self.market.discount_factor(self.T)
+            sums = tf.math.unsorted_segment_sum(payoff, id_vector, n_opts)
+            counts = tf.math.unsorted_segment_sum(tf.ones_like(payoff), id_vector, n_opts)
+            price = discount * (sums / counts)
 
         delta = tape.gradient(price, self.asset.S0)
         if delta is None:
