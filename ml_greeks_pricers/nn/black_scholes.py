@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import numpy as np
+from scipy.stats import norm
+import tensorflow as tf
+
+from .scaler import TwinScaler
+from .models import vanilla_net, TwinNetwork, WeightedMeanSquaredError
+from .utils import lambda_j, alpha_beta, dataset, lr_callback
+
+
+# ---- analytical formulas ----------------------------------------------------
+
+def bs_price(s, k, v, T):
+    d1 = (np.log(s / k) + 0.5 * v * v * T) / (v * np.sqrt(T))
+    d2 = d1 - v * np.sqrt(T)
+    return s * norm.cdf(d1) - k * norm.cdf(d2)
+
+
+def bs_delta(s, k, v, T):
+    d1 = (np.log(s / k) + 0.5 * v * v * T) / (v * np.sqrt(T))
+    return norm.cdf(d1)
+
+
+def bs_vega(s, k, v, T):
+    d1 = (np.log(s / k) + 0.5 * v * v * T) / (v * np.sqrt(T))
+    return s * np.sqrt(T) * norm.pdf(d1)
+
+
+# ---- data generator ---------------------------------------------------------
+
+class BlackScholes:
+    def __init__(self, vol: float = 0.2, T1: float = 1.0, T2: float = 2.0, K: float = 1.1, vm: float = 1.5):
+        self.s0, self.v, self.T1, self.T2, self.K, self.vm = 1.0, vol, T1, T2, K, vm
+
+    def training_set(self, m: int, anti: bool = True, seed: int | None = None):
+        np.random.seed(seed)
+        r = np.random.normal(size=(m, 2))
+        v0 = self.v * self.vm
+        R1 = np.exp(-0.5 * v0 * v0 * self.T1 + v0 * np.sqrt(self.T1) * r[:, 0])
+        R2 = np.exp(-0.5 * self.v * self.v * (self.T2 - self.T1) + self.v * np.sqrt(self.T2 - self.T1) * r[:, 1])
+        S1, S2 = self.s0 * R1, self.s0 * R1 * R2
+        pay = np.maximum(0.0, S2 - self.K)
+        if anti:
+            R2a = np.exp(-0.5 * self.v * self.v * (self.T2 - self.T1) - self.v * np.sqrt(self.T2 - self.T1) * r[:, 1])
+            S2a = S1 * R2a
+            paya = np.maximum(0.0, S2a - self.K)
+            Y = 0.5 * (pay + paya)
+            Z = 0.5 * (
+                np.where(S2 > self.K, R2, 0.0).reshape(-1, 1)
+                + np.where(S2a > self.K, R2a, 0.0).reshape(-1, 1)
+            )
+        else:
+            Y = pay
+            Z = np.where(S2 > self.K, R2, 0.0).reshape(-1, 1)
+        return (
+            S1.reshape(-1, 1).astype(np.float32),
+            Y.reshape(-1, 1).astype(np.float32),
+            Z.astype(np.float32),
+        )
+
+    def test_set(self, lo: float = 0.35, hi: float = 1.65, n: int = 100):
+        s = np.linspace(lo, hi, n, dtype=np.float32).reshape(-1, 1)
+        T = self.T2 - self.T1
+        return (
+            s,
+            s,
+            bs_price(s, self.K, self.v, T).astype(np.float32).reshape(-1, 1),
+            bs_delta(s, self.K, self.v, T).astype(np.float32).reshape(-1, 1),
+            bs_vega(s, self.K, self.v, T).astype(np.float32).reshape(-1, 1),
+        )
+
+
+# ---- approximator -----------------------------------------------------------
+
+class NeuralApproximator:
+    def __init__(self, x, y, dy=None):
+        self.x_raw, self.y_raw = x, y
+        if dy is None:
+            self.dy_raw = tf.zeros((y.shape[0], y.shape[1], x.shape[1]), tf.float32)
+        else:
+            self.dy_raw = dy
+        self.scaler = TwinScaler()
+
+    def prepare(self, m: int, diff: bool, lam: float = 1.0, hu: int = 20, hl: int = 4):
+        self.scaler.fit(self.x_raw[:m], self.y_raw[:m])
+        self.x_s, self.y_s, self.dy_s = self.scaler.transform(
+            self.x_raw[:m], self.y_raw[:m], self.dy_raw[:m]
+        )
+        n = self.x_s.shape[1]
+        self.twin = TwinNetwork(vanilla_net(n, hu, hl))
+        self.lam_j = lambda_j(self.dy_s)
+        self.loss_w = alpha_beta(n, lam) if diff else [1, 0]
+
+    def train(
+        self,
+        epochs: int = 100,
+        lr_sched=[(0, 1e-8), (0.2, 1e-1), (0.6, 1e-2), (0.9, 1e-6), (1, 1e-8)],
+        steps: int = 16,
+        bs: int = 256,
+    ):
+        ds = dataset(self.x_s, self.y_s, self.dy_s, bs)
+        self.twin.compile(
+            optimizer="adam",
+            loss=["mse", WeightedMeanSquaredError(self.lam_j)],
+            loss_weights=self.loss_w,
+        )
+        self.twin.fit(ds, epochs=epochs, steps_per_epoch=steps, callbacks=[lr_callback(lr_sched, epochs)], verbose=0)
+
+    def predict(self, x):
+        x_s = self.scaler.x_transform(x)
+        y_s, dy_s = self.twin.predict(x_s, verbose=0)
+        return self.scaler.inverse(y_s, dy_s)
+
+
+# ---- experiment -------------------------------------------------------------
+
+def run_test(gen: BlackScholes, sizes, n_test: int, seed: int):
+    x_tr, y_tr, dy_tr = gen.training_set(max(sizes), seed=seed)
+    x_te, x_ax, y_te, dy_te, _ = gen.test_set(n=n_test)
+    reg = NeuralApproximator(x_tr, y_tr, dy_tr)
+    v_pred, d_pred = {}, {}
+    for sz in sizes:
+        reg.prepare(sz, diff=False)
+        reg.train()
+        v, d = reg.predict(x_te)
+        v_pred[("std", sz)], d_pred[("std", sz)] = v, d[:, 0]
+        reg.prepare(sz, diff=True)
+        reg.train()
+        v, d = reg.predict(x_te)
+        v_pred[("diff", sz)], d_pred[("diff", sz)] = v, d[:, 0]
+    return x_ax, y_te, dy_te[:, 0], v_pred, d_pred
