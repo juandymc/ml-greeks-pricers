@@ -33,7 +33,7 @@ def plot(title, pred, ana, x, y, sizes, ylabel):
 if __name__ == "__main__":
     sizes = [1024, 8192]
     n_test = 100
-    seed = np.random.randint(1e4)
+    seed = 6233#np.random.randint(1e4)
     print(f"seed {seed}")
     market = MarketData(0.0, 0.2)
     # Use an even number of paths and steps when antithetic sampling is enabled
