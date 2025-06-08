@@ -64,29 +64,21 @@ class MCEuropeanOption:
 
         np.random.seed(seed)
         r = np.random.normal(size=(m, 2))
-
+        dt = self.T2/self.T1/8
         asset = EuropeanAsset(
             self.s0,
             self.q,
             T=self.T2,
-            dt=self.T1,
+            dt=dt,
             n_paths=m,
             antithetic=False,
             seed=0 if seed is None else seed,
             use_scan=True,
         )
 
-        dW = np.stack(
-            [np.sqrt(self.T1) * r[:, 0], np.sqrt(self.T2 - self.T1) * r[:, 1]],
-            axis=0,
-        )
-        asset._cached_dW[:2].assign(tf.constant(dW, dtype=asset.dtype))
-        asset._cache_valid = True
-        asset._cached_steps = 2
-
-        S1 = asset.simulate(self.T1, self.market, use_cache=True).numpy().ravel()
-        S2 = asset.simulate(self.T2, self.market, use_cache=True).numpy().ravel()
-
+        S2 = asset.simulate(self.T2, self.market, use_cache=True, save_path=True).numpy().ravel()
+        S1 = asset.path[int(self.T1/dt)-1].numpy().ravel()
+        
         dt = self.T2 - self.T1
         pay = np.maximum(0.0, S2 - self.K)
         R2 = S2 / S1
