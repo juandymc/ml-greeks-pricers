@@ -2,7 +2,12 @@
 
 import numpy as np
 
-from ...utils import basis_functions
+# ``regression.py`` lives in ``ml_greeks_pricers.nn.american.algorithms.backward_induction``.
+# The basis functions utilities are located in ``ml_greeks_pricers.nn.american.algorithms.utils``.
+# Using three leading dots would search for ``ml_greeks_pricers.nn.american.utils`` which
+# does not exist. The correct relative import goes up one level to the ``algorithms``
+# package and then into ``utils``.
+from ..utils import basis_functions
 
 
 class LeastSquares:
