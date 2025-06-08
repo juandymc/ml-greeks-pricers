@@ -9,7 +9,10 @@ import time
 
 import numpy as np
 import matplotlib.pyplot as plt
-from fbm import FBM
+try:  # Optional dependency used only for fractional models
+    from fbm import FBM
+except ImportError:  # pragma: no cover - optional
+    FBM = None
 import scipy.special as scispe
 
 import joblib
