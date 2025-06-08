@@ -1,7 +1,7 @@
 """TensorFlow-friendly wrapper for Least Squares Monte Carlo."""
 
 import numpy as np
-from optimal_stopping.algorithms.backward_induction import regression
+from ..algorithms.backward_induction import regression
 from .backward_induction_pricer import AmericanOptionPricer
 
 

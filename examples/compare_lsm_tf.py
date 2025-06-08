@@ -1,7 +1,10 @@
-from optimal_stopping.data.stock_model import BlackScholes
-from optimal_stopping.payoffs.payoff import MaxCall
-from optimal_stopping.tf import LeastSquaresPricer, NeuralNetworkPricerTF
-from optimal_stopping.run import configs
+from ml_greeks_pricers.nn.american.data.stock_model import BlackScholes
+from ml_greeks_pricers.nn.american.payoffs.payoff import MaxCall
+from ml_greeks_pricers.nn.american.tf import (
+    LeastSquaresPricer,
+    NeuralNetworkPricerTF,
+)
+from ml_greeks_pricers.nn.american.run import configs
 import numpy as np
 import tensorflow as tf
 
