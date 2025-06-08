@@ -252,7 +252,7 @@ class EuropeanAsset:
             Z = tf.concat([Z, -Z], axis=1)
         return Z * sd
 
-    def simulate(self, T, market: MarketData, *, use_cache=True):
+    def simulate(self, T, market: MarketData, *, use_cache=True, save_path = False):
         """Return the asset price at maturity ``T``.
 
         When ``use_cache`` is ``True`` and a longer path for the same market has
@@ -298,7 +298,10 @@ class EuropeanAsset:
             path = tf.scan(step, (dW, times), initializer=S)
         else:
             path = tf.foldl(step, (dW, times), initializer=S)
-
+        
+        if save_path == True:
+            self.path = path
+            
         return path[-1]
 
 class MCEuropeanOption:
