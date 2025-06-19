@@ -1,20 +1,42 @@
 import numpy as np
 from dataclasses import dataclass
 from math import erf
+from typing import Union
+
 from .black_utils import bs_price
+from ml_greeks_pricers.volatility import np_discrete
 
 @dataclass
 class MarketData:
     r: float
-    sigma: float
+    vol_model: Union[float, np_discrete.DupireLocalVol]
     dtype: type = np.float64
+
+    def __post_init__(self):
+        if isinstance(self.vol_model, (float, int)):
+            self.sigma = float(self.vol_model)
+            self._dupire = None
+        elif isinstance(self.vol_model, np_discrete.DupireLocalVol):
+            self.sigma = None
+            self._dupire = self.vol_model
+        else:
+            raise TypeError("vol_model must be float/int or DupireLocalVol")
 
     def discount_factor(self, T):
         T = np.asarray(T, dtype=self.dtype)
         return np.exp(-self.r * T)
 
     def sigma_val(self, t, spot):
-        return np.full_like(np.asarray(spot, dtype=self.dtype), self.sigma)
+        if self._dupire is None:
+            return np.full_like(np.asarray(spot, dtype=self.dtype), self.sigma)
+        else:
+            return np_discrete.ImpliedVolSurface.bilinear(
+                t,
+                spot,
+                self._dupire.surface,
+                self._dupire.strikes,
+                self._dupire.maturities,
+            )
 
 
 @dataclass
@@ -56,9 +78,10 @@ class EuropeanAsset:
                 self._cached_steps = steps
                 self._cache_valid = True
         S = np.full((self.n_paths,), self.S0, dtype=self.dtype)
-        for t in range(steps):
-            sig = market.sigma
-            S *= np.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dW[t])
+        for i in range(steps):
+            t_cur = i * self.dt
+            sig = market.sigma_val(t_cur, S)
+            S *= np.exp((market.r - self.q - 0.5 * sig ** 2) * self.dt + sig * dW[i])
         if save_path:
             self.path = S
         return S
@@ -80,7 +103,7 @@ class MCEuropeanOption:
         if S0 is not None:
             original = self.asset.S0
             self.asset.S0 = S0
-        if sigma is not None:
+        if sigma is not None and self.market.sigma is not None:
             original_sigma = self.market.sigma
             self.market.sigma = sigma
         ST = self.asset.simulate(self.T, self.market, use_cache=self.use_cache)
@@ -88,15 +111,35 @@ class MCEuropeanOption:
         price = self.market.discount_factor(self.T) * payoff.mean()
         if S0 is not None:
             self.asset.S0 = original
-        if sigma is not None:
+        if sigma is not None and self.market.sigma is not None:
             self.market.sigma = original_sigma
         return price
 
     def __call__(self):
         price = self._price()
         self._last_price = price
-        self._last_delta = bs_delta(self.asset.S0, self.K, self.market.sigma, self.T, self.asset.q, self.market.r, self.is_call)
-        self._last_vega = bs_vega(self.asset.S0, self.K, self.market.sigma, self.T, self.asset.q, self.market.r, self.is_call)
+        if self.market.sigma is not None:
+            self._last_delta = bs_delta(
+                self.asset.S0,
+                self.K,
+                self.market.sigma,
+                self.T,
+                self.asset.q,
+                self.market.r,
+                self.is_call,
+            )
+            self._last_vega = bs_vega(
+                self.asset.S0,
+                self.K,
+                self.market.sigma,
+                self.T,
+                self.asset.q,
+                self.market.r,
+                self.is_call,
+            )
+        else:
+            self._last_delta = None
+            self._last_vega = None
         return price
 
     def delta(self):
