@@ -9,7 +9,7 @@ from ml_greeks_pricers.volatility import np_discrete
 @dataclass
 class MarketData:
     r: float
-    vol_model: Union[float, np_discrete.DupireLocalVol]
+    vol_model: Union[float, "np_discrete.DupireLocalVol"]
     dtype: type = np.float64
 
     def __post_init__(self):

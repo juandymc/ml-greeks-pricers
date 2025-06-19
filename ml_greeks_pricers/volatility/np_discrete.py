@@ -82,7 +82,7 @@ class DupireLocalVol(ImpliedVolSurface):
                     return bs_price(S0, Kv, Tv, 0.0, r, q, sigma, True)
 
                 eps_T = 1e-4 * max(float(T), 1.0)
-                eps_K = 1e-4 * max(float(K), 1.0)
+                eps_K = 7e-2 * max(float(K), 1.0)
                 C = price_fn(T, K)
                 C_T = (price_fn(T + eps_T, K) - price_fn(max(T - eps_T, 1e-8), K)) / (2 * eps_T)
                 C_K_plus = price_fn(T, K + eps_K)
