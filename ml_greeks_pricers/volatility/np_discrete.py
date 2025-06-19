@@ -32,8 +32,13 @@ class ImpliedVolSurface:
         k = np.asarray(k, dtype=grid.dtype)
         strikes = np.asarray(strikes, dtype=grid.dtype)
         maturities = np.asarray(maturities, dtype=grid.dtype)
-        t_flat = t.ravel()
-        k_flat = k.ravel()
+        # ``t`` and ``k`` may have different shapes. ``np.broadcast`` gives the
+        # resulting shape after applying numpy's broadcasting rules, which is
+        # the shape we want for the output.  We then broadcast ``t`` and ``k``
+        # to this common shape before flattening for the interpolation logic.
+        out_shape = np.broadcast(t, k).shape
+        t_flat = np.broadcast_to(t, out_shape).ravel()
+        k_flat = np.broadcast_to(k, out_shape).ravel()
         it = np.clip(np.searchsorted(maturities, t_flat, side="right") - 1, 0, len(maturities) - 2)
         ik = np.clip(np.searchsorted(strikes, k_flat, side="right") - 1, 0, len(strikes) - 2)
         t0 = maturities[it]; t1 = maturities[it + 1]
@@ -50,7 +55,7 @@ class ImpliedVolSurface:
             + (1 - wt) * wk * g01
             + wt * wk * g11
         )
-        return result.reshape(t.shape)
+        return result.reshape(out_shape)
 
 
 class DupireLocalVol(ImpliedVolSurface):
