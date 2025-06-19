@@ -1,0 +1,3 @@
+LSM price (tf pkg): 0.8040
+NLSM price (TensorFlow): 0.7217
+Difference: 0.0823
