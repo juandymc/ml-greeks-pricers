@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
+from math import erf
 from .black_utils import bs_price
 
 @dataclass

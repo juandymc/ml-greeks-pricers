@@ -27,6 +27,7 @@ def compare_european():
 
     print("European TF:", price_tf)
     print("European NP:", price_np)
+    print("Close:", np.isclose(price_tf, price_np, rtol=5e-2))
 
 
 def compare_american():
@@ -47,6 +48,7 @@ def compare_american():
 
     print("American TF:", price_tf)
     print("American NP:", price_np)
+    print("Close:", np.isclose(price_tf, price_np, rtol=5e-2))
 
 
 if __name__ == "__main__":
