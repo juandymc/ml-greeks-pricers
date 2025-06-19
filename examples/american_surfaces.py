@@ -22,25 +22,21 @@ T_max = 2.0
 dt = 0.5 / n_steps
 
 # store CSV files in a dedicated folder for American option results
-csv_dir = Path(__file__).with_name('american_surfaces')
-csv_dir.mkdir(exist_ok=True)
+csv_dir = Path(__file__).with_name('outputs') / 'american_surfaces'
+csv_dir.mkdir(parents=True, exist_ok=True)
 
-strikes = [60, 70, 80, 90, 100, 110, 120, 130, 140]
-mats = [0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00]
+inputs_dir = Path(__file__).with_name('inputs')
+iv_df = pd.read_csv(inputs_dir / 'implied_vol_surface.csv', index_col=0)
 
-iv = [
-    [0.248, 0.233, 0.220, 0.209, 0.200, 0.193, 0.188, 0.185, 0.184],
-    [0.251, 0.236, 0.223, 0.212, 0.203, 0.196, 0.191, 0.188, 0.187],
-    [0.254, 0.239, 0.226, 0.215, 0.206, 0.199, 0.194, 0.191, 0.190],
-    [0.257, 0.242, 0.229, 0.218, 0.209, 0.202, 0.197, 0.194, 0.193],
-    [0.260, 0.245, 0.232, 0.221, 0.212, 0.205, 0.200, 0.197, 0.196],
-    [0.263, 0.248, 0.235, 0.224, 0.215, 0.208, 0.203, 0.200, 0.199],
-    [0.266, 0.251, 0.238, 0.227, 0.218, 0.211, 0.206, 0.203, 0.202],
-    [0.269, 0.254, 0.241, 0.230, 0.221, 0.214, 0.209, 0.206, 0.205],
-]
+strikes = [float(c) for c in iv_df.columns]
+mats = [float(i) for i in iv_df.index]
+iv = iv_df.values.tolist()
+
 
 market_flat = MarketData(r, iv_vol)
 dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
+dup_df = pd.DataFrame(dup().numpy(), index=mats, columns=strikes)
+dup_df.to_csv(csv_dir / 'dupire_local_vol.csv')
 market_dup = MarketData(r, dup)
 
 def surface(market, use_cache=False):
