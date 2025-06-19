@@ -1,8 +1,8 @@
 import pytest
 import tensorflow as tf
 
-from ml_greeks_pricers.pricers.american import AmericanAsset, MCAmericanOption
-from ml_greeks_pricers.pricers.european import MarketData
+from ml_greeks_pricers.pricers.tf.american import AmericanAsset, MCAmericanOption
+from ml_greeks_pricers.pricers.tf.european import MarketData
 
 
 tf.keras.backend.set_floatx("float64")

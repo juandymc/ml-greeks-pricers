@@ -1,8 +1,8 @@
 import tensorflow as tf
 
 from ml_greeks_pricers.volatility.discrete import DupireLocalVol
-from ml_greeks_pricers.pricers.european import MarketData, EuropeanAsset, MCEuropeanOption
-from ml_greeks_pricers.pricers.american import AmericanAsset, MCAmericanOption
+from ml_greeks_pricers.pricers.tf.european import MarketData, EuropeanAsset, MCEuropeanOption
+from ml_greeks_pricers.pricers.tf.american import AmericanAsset, MCAmericanOption
 
 
 tf.keras.backend.set_floatx('float64')

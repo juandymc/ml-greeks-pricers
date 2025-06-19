@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 
 from ml_greeks_pricers.nn import MCEuropeanOption, NeuralApproximator, TwinNetwork
-from ml_greeks_pricers.pricers.european import MarketData, EuropeanAsset
+from ml_greeks_pricers.pricers.tf.european import MarketData, EuropeanAsset
 
 # ---------------------- parámetros de entrenamiento ------------------------
 N_TRAIN   = 8_192          # tamaño del set de entrenamiento

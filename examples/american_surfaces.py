@@ -8,8 +8,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 tf.get_logger().setLevel('ERROR')
 tf.keras.backend.set_floatx('float64')
 
-from ml_greeks_pricers.pricers.european import MarketData
-from ml_greeks_pricers.pricers.american import AmericanAsset, MCAmericanOption
+from ml_greeks_pricers.pricers.tf.european import MarketData
+from ml_greeks_pricers.pricers.tf.american import AmericanAsset, MCAmericanOption
 from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 import pandas as pd
 

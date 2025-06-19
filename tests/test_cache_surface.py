@@ -1,6 +1,6 @@
 import pandas as pd
 import tensorflow as tf
-from ml_greeks_pricers.pricers.european import (
+from ml_greeks_pricers.pricers.tf.european import (
     AnalyticalEuropeanOption,
     EuropeanAsset,
     MCEuropeanOption,
