@@ -8,7 +8,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'   # suprime avisos de backend C++
 tf.get_logger().setLevel('ERROR')          # suprime avisos Python de TF
 
 
-from ml_greeks_pricers.pricers.european import (
+from ml_greeks_pricers.pricers.tf.european import (
     AnalyticalEuropeanOption,
     MCEuropeanOption,
     MarketData,

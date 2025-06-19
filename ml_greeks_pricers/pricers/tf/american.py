@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tensorflow as tf
 
-from ml_greeks_pricers.pricers.european import (
+from .european import (
     MarketData,
     EuropeanAsset,
 )

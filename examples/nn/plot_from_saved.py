@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 
 from ml_greeks_pricers.nn import TwinNetwork, MCEuropeanOption
-from ml_greeks_pricers.pricers.european import (
+from ml_greeks_pricers.pricers.tf.european import (
     MarketData,
     EuropeanAsset,
     AnalyticalEuropeanOption,

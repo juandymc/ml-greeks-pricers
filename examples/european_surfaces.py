@@ -8,7 +8,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 tf.get_logger().setLevel('ERROR')
 tf.keras.backend.set_floatx('float64')
 
-from ml_greeks_pricers.pricers.european import (
+from ml_greeks_pricers.pricers.tf.european import (
     MarketData,
     MCEuropeanOption,
     EuropeanAsset,

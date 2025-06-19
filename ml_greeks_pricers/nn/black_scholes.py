@@ -7,7 +7,7 @@ import tensorflow as tf
 from .scaler import TwinScaler
 from .models import vanilla_net, TwinNetwork, WeightedMeanSquaredError
 from .utils import lambda_j, alpha_beta, dataset, lr_callback
-from ..pricers.european import MarketData, EuropeanAsset
+from ..pricers.tf.european import MarketData, EuropeanAsset
 
 
 # ---- analytical formulas ----------------------------------------------------

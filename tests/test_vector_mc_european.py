@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from ml_greeks_pricers.pricers.european import (
+from ml_greeks_pricers.pricers.tf.european import (
     AnalyticalEuropeanOption,
     MCEuropeanOption,
     EuropeanAsset,

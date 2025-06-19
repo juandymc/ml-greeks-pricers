@@ -1,4 +1,4 @@
-from ml_greeks_pricers.pricers.black_utils import bs_price
+from ml_greeks_pricers.pricers.tf.black_utils import bs_price
 from ml_greeks_pricers.common.constants import USE_XLA
 
 import tensorflow as tf

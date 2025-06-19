@@ -6,7 +6,7 @@ from ml_greeks_pricers.nn import (
     MCEuropeanOption,
     NeuralApproximator,
 )
-from ml_greeks_pricers.pricers.european import MarketData, EuropeanAsset
+from ml_greeks_pricers.pricers.tf.european import MarketData, EuropeanAsset
 
 
 def test_bs_functions():
