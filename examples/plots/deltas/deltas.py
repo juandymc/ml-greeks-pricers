@@ -10,6 +10,43 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+def plot_slices(
+    X: np.ndarray,
+    Y: np.ndarray,
+    Z: np.ndarray,
+    zlabel: str,
+    title: str,
+    out_file: Path,
+    strike_idx: int | None = None,
+    maturity_idx: int | None = None,
+):
+    """Generate and save 2D slice plots for fixed strike and maturity."""
+    strikes = X[0]
+    maturities = Y[:, 0]
+
+    if strike_idx is None:
+        strike_idx = len(strikes) // 2
+    if maturity_idx is None:
+        maturity_idx = len(maturities) // 2
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    axes[0].plot(maturities, Z[:, strike_idx])
+    axes[0].set_xlabel("Maturity")
+    axes[0].set_ylabel(zlabel)
+    axes[0].set_title(f"Strike = {strikes[strike_idx]:.2f}")
+
+    axes[1].plot(strikes, Z[maturity_idx, :])
+    axes[1].set_xlabel("Strike")
+    axes[1].set_ylabel(zlabel)
+    axes[1].set_title(f"Maturity = {maturities[maturity_idx]:.2f}")
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_file)
+    plt.close(fig)
+
+
 def load_surface(csv_path: Path):
     """Return strike, maturity meshgrids and surface values from a CSV."""
     df = pd.read_csv(csv_path, index_col=0)
@@ -63,6 +100,15 @@ def main() -> None:
             zlabel="Delta",
             title=title,
             out_file=out_file,
+        )
+        slice_file = out_file.with_name(out_file.stem + "_slice.png")
+        plot_slices(
+            X,
+            Y,
+            Z,
+            zlabel="Delta",
+            title=title,
+            out_file=slice_file,
         )
 
 
