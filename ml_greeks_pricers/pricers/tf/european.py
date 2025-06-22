@@ -296,13 +296,15 @@ class EuropeanAsset:
 
         if self.use_scan:
             path = tf.scan(step, (dW, times), initializer=S)
+            result = path[-1]
+            if save_path:
+                self.path = path
         else:
-            path = tf.foldl(step, (dW, times), initializer=S)
-        
-        if save_path == True:
-            self.path = path
-            
-        return path[-1]
+            result = tf.foldl(step, (dW, times), initializer=S)
+            if save_path:
+                self.path = result
+
+        return result
 
 class MCEuropeanOption:
     """Monte Carlo pricer for European options."""
