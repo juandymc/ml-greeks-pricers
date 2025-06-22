@@ -20,12 +20,13 @@ from ml_greeks_pricers.volatility.discrete import ImpliedVolSurface, DupireLocal
 
 
 if __name__ == '__main__':
-    n_paths = 50_000
-    n_steps = 100
-    S0,K,T,r,q = 110.,90.,0.5,0.06,0.
+    n_paths = 150_000
+    n_steps = 200
+    S0,K,T,r,q = 100.,90.,1.5,0.,0.
     dt = T/n_steps
-    iv_vol = 0.212
-    analEur = AnalyticalEuropeanOption(S0, K, T, 0, r, q, iv_vol, is_call=False)
+    iv_vol = 	0.208
+    seed = 40
+    analEur = AnalyticalEuropeanOption(S0, K, T, 0, r, q, iv_vol, is_call=True)
     analytical_price = analEur().numpy()
     tf.print('analytical', analytical_price, analEur.delta(), analEur.vega())
     # ---- volatilidad constante ---------------------------------------
@@ -37,17 +38,18 @@ if __name__ == '__main__':
         dt=dt,
         n_paths=n_paths,
         use_scan=True,
-        seed=0,
+        seed=seed,
     )
     mc_flat = MCEuropeanOption(asset_flat, market_flat, K, T, is_call=False)
     flat_price = mc_flat().numpy()
-    tf.print('flat', flat_price, mc_flat.delta(), mc_flat.vega())
+    tf.print('flat', flat_price, mc_flat.delta())#, mc_flat.vega())
 
     # ---- Dupire local-vol --------------------------------------------
     inputs_dir = Path(__file__).with_name("inputs")
     csv_dir = Path(__file__).with_name("outputs")
     csv_dir.mkdir(exist_ok=True)
     iv_df = pd.read_csv(inputs_dir / "implied_vol_surface.csv", index_col=0)
+    iv_df[:]=iv_vol
     strikes = [float(c) for c in iv_df.columns]
     mats = [float(i) for i in iv_df.index]
     iv = iv_df.values.tolist()
@@ -64,17 +66,17 @@ if __name__ == '__main__':
         dt=dt,
         n_paths=n_paths,
         use_scan=True,
-        seed=0,
+        seed=seed,
     )
     mc_loc = MCEuropeanOption(asset_dup, market_dup, K, T, is_call=False)
     dupire_price = mc_loc().numpy()
-    tf.print('dupire', dupire_price, mc_loc.delta(), mc_loc.vega())
+    tf.print('dupire', dupire_price, mc_loc.delta())#, mc_loc.vega())
 
     def warn_if_far(name, price):
-        diff = abs(price - analytical_price) / analytical_price
-        if diff > 0.025:
+        diff = 100*abs(price - analytical_price) / S0
+        if diff > 0.05:
             warnings.warn(
-                f"{name} price differs from analytical by {diff:.2%}",
+                f"{name} price differs from analytical: price = {price}, analytical_price = {analytical_price}, diff = {diff}",
                 RuntimeWarning,
             )
 

@@ -142,8 +142,8 @@ if __name__ == '__main__':
     prices_flat, deltas_flat, vegas_flat = measure(market_flat, 'flat', True)
     prices_dup, deltas_dup, vegas_dup = measure(market_dup, 'dupire', False)
 
-    diff_flat_p = 100.0 * (prices_flat - prices_ana) / prices_ana
-    diff_dup_p = 100.0 * (prices_dup - prices_ana) / prices_ana
+    diff_flat_p = 100.0 * (prices_flat - prices_ana) / S0
+    diff_dup_p = 100.0 * (prices_dup - prices_ana) / S0
     diff_flat_d = 100.0 * (deltas_flat - deltas_ana) / deltas_ana
     diff_dup_d = 100.0 * (deltas_dup - deltas_ana) / deltas_ana
     diff_flat_v = 100.0 * (vegas_flat - vegas_ana) / vegas_ana

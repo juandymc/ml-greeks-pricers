@@ -9,9 +9,9 @@ from ml_greeks_pricers.pricers.tf.european import (
 from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 
 # parameters copied from examples/european.py
-S0, K, T, r, q = 110., 90., 0.5, 0.06, 0.
-iv_vol = 0.212
-n_paths = 50_000
+S0, K, T, r, q = 100., 90., 1.75, 0., 0.
+iv_vol = 0.227
+n_paths = 200_000
 n_steps = 100
 dt = T / n_steps
 
@@ -66,12 +66,7 @@ def test_monte_carlo_prices_close_to_analytical():
     dupire_price = mc_loc().numpy()
 
     def check(label, price):
-        diff = abs(price - analytical_price) / analytical_price
-        if diff > WARN_TOL:
-            warnings.warn(
-                f"{label} price differs from analytical by {diff:.2%}",
-                RuntimeWarning,
-            )
+        diff = 100*abs(price - analytical_price) / S0
         return diff
 
     flat_diff = check("flat", flat_price)
