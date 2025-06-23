@@ -20,13 +20,17 @@ from ml_greeks_pricers.volatility.discrete import ImpliedVolSurface, DupireLocal
 
 
 if __name__ == '__main__':
-    n_paths = 150_000
-    n_steps = 200
-    S0,K,T,r,q = 100.,90.,1.5,0.,0.
+    n_paths = 200_000
+    n_steps = 60
+    S0,K,T,r,q = 100.,90.,1.5,0.06,0
     dt = T/n_steps
-    iv_vol = 	0.208
-    seed = 40
-    analEur = AnalyticalEuropeanOption(S0, K, T, 0, r, q, iv_vol, is_call=True)
+    iv_vol = 0.224
+    seed = 42
+    is_call = True
+    antithetic = True
+    use_scan   = True
+    
+    analEur = AnalyticalEuropeanOption(S0, K, T, 0, r, q, iv_vol, is_call=is_call)
     analytical_price = analEur().numpy()
     tf.print('analytical', analytical_price, analEur.delta(), analEur.vega())
     # ---- volatilidad constante ---------------------------------------
@@ -36,11 +40,12 @@ if __name__ == '__main__':
         q,
         T=T,
         dt=dt,
+        antithetic=antithetic,
         n_paths=n_paths,
-        use_scan=True,
+        use_scan=use_scan,
         seed=seed,
     )
-    mc_flat = MCEuropeanOption(asset_flat, market_flat, K, T, is_call=False)
+    mc_flat = MCEuropeanOption(asset_flat, market_flat, K, T, is_call=is_call)
     flat_price = mc_flat().numpy()
     tf.print('flat', flat_price, mc_flat.delta())#, mc_flat.vega())
 
@@ -49,11 +54,11 @@ if __name__ == '__main__':
     csv_dir = Path(__file__).with_name("outputs")
     csv_dir.mkdir(exist_ok=True)
     iv_df = pd.read_csv(inputs_dir / "implied_vol_surface.csv", index_col=0)
-    iv_df[:]=iv_vol
+    #iv_df[:]=iv_vol
     strikes = [float(c) for c in iv_df.columns]
     mats = [float(i) for i in iv_df.index]
     iv = iv_df.values.tolist()
-    dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
+    dup = DupireLocalVol(strikes, mats, iv, S0, r, q, backend="ql")
     pd.DataFrame(dup().numpy(), index=mats, columns=strikes).to_csv(
         csv_dir / "dupire_local_vol.csv"
     )
@@ -64,11 +69,12 @@ if __name__ == '__main__':
         q,
         T=T,
         dt=dt,
+        antithetic=antithetic,
         n_paths=n_paths,
         use_scan=True,
         seed=seed,
     )
-    mc_loc = MCEuropeanOption(asset_dup, market_dup, K, T, is_call=False)
+    mc_loc = MCEuropeanOption(asset_dup, market_dup, K, T, is_call=is_call)
     dupire_price = mc_loc().numpy()
     tf.print('dupire', dupire_price, mc_loc.delta())#, mc_loc.vega())
 

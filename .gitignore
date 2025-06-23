@@ -8,6 +8,6 @@ __pycache__/
 ml_greeks_pricers.egg-info/
 *.doc
 *.pdf
-*.docx
+doc/*.docx
 *.zip
 *.ppt

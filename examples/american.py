@@ -12,14 +12,15 @@ tf.keras.backend.set_floatx('float64')
 dtype = tf.float64
 
 if __name__ == "__main__":
-    S0 = 110.0
+    S0 = 100.0
     K = 90.0
     r = 0.06
     q = 0.0
-    T = 0.5
+    T = 1.5
     n_paths = 200_000
-    n_steps = 50
+    n_steps = 60
     seed = 42
+    is_call = True
     
     dt = T / n_steps
 
@@ -32,18 +33,18 @@ if __name__ == "__main__":
     mats = [float(i) for i in iv_df.index]
     iv = iv_df.values.tolist()
 
-    dupire_lv = DupireLocalVol(strikes, mats, iv, S0, r, q)
+    dupire_lv = DupireLocalVol(strikes, mats, iv, S0, r, q, backend="ql")
     pd.DataFrame(dupire_lv().numpy(), index=mats, columns=strikes).to_csv(
-        csv_dir / "dupire_local_vol.csv"
+        csv_dir / "dupire_local_vol_american.csv"
     )
-    flat_lv = 0.212
+    flat_lv = 0.224
 
     market_flat = MarketData(r, flat_lv)
     market_dup  = MarketData(r, dupire_lv)
 
 
     asset_amer = AmericanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
-    mc_amer = MCAmericanOption(asset_amer, market_flat, K, T, is_call=False, use_cache = True)
+    mc_amer = MCAmericanOption(asset_amer, market_flat, K, T, is_call=is_call, use_cache = True)
 
     price_amer = mc_amer()
     delta_amer = mc_amer.delta()
@@ -51,7 +52,7 @@ if __name__ == "__main__":
     tf.print("American flat:", price_amer, "Delta:", delta_amer, "Vega:", vega_amer)
     
     asset_amer = AmericanAsset(S0, q, T=T, dt=dt, n_paths=n_paths, antithetic=True, seed=seed)
-    mc_amer = MCAmericanOption(asset_amer, market_dup, K, T, is_call=False, use_cache = True)
+    mc_amer = MCAmericanOption(asset_amer, market_dup, K, T, is_call=is_call, use_cache = True)
     price_amer = mc_amer()
     delta_amer = mc_amer.delta()
     vega_amer = mc_amer.vega()

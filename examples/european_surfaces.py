@@ -39,7 +39,7 @@ iv = iv_df.values.tolist()
 
 
 market_flat = MarketData(r, iv_vol)
-dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
+dup = DupireLocalVol(strikes, mats, iv, S0, r, q, backend="ql")
 dup_df = pd.DataFrame(dup().numpy(), index=mats, columns=strikes)
 dup_df.to_csv(csv_dir / 'dupire_local_vol.csv')
 market_dup = MarketData(r, dup)

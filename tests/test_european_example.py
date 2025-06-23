@@ -12,7 +12,7 @@ from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 S0, K, T, r, q = 100., 90., 1.75, 0., 0.
 iv_vol = 0.227
 n_paths = 200_000
-n_steps = 100
+n_steps = 60
 dt = T / n_steps
 
 strikes = [60, 70, 80, 90, 100, 110, 120, 130, 140]
@@ -51,7 +51,7 @@ def test_monte_carlo_prices_close_to_analytical():
     mc_flat = MCEuropeanOption(asset_flat, market_flat, K, T, is_call=False)
     flat_price = mc_flat().numpy()
 
-    dup = DupireLocalVol(strikes, mats, iv, S0, r, q)
+    dup = DupireLocalVol(strikes, mats, iv, S0, r, q, backend="ql")
     market_dup = MarketData(r, dup)
     asset_dup = EuropeanAsset(
         S0,
@@ -113,3 +113,5 @@ def test_monte_carlo_greeks_close_to_analytical():
 
     assert delta_diff < FAIL_TOL
     assert vega_diff < FAIL_TOL
+    
+test_monte_carlo_prices_close_to_analytical()
