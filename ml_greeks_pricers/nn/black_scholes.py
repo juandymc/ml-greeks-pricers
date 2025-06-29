@@ -44,8 +44,7 @@ class MCEuropeanOption:
         factor: int = 8,
         T1: float = 1.0,
         T2: float = 2.0,
-        K: float = 1.1,
-        vm: float = 1.5,
+        K: float = 1.1
     ) -> None:
         if market._flat_sigma is None:
             raise ValueError("Only flat volatility supported")
@@ -60,7 +59,6 @@ class MCEuropeanOption:
         self.T1 = T1
         self.T2 = T2
         self.K = K
-        self.vm = vm
 
     def training_set(self, m: int, anti: bool = True, seed: int | None = None):
         """Generate a training set using :class:`EuropeanAsset`."""
@@ -89,7 +87,7 @@ class MCEuropeanOption:
         dt = self.T2 - self.T1
         pay = np.maximum(0.0, S2 - self.K)
         R2 = S2 / S1
-
+        anti = False
         if anti:
             Z = (np.log(R2) + 0.5 * self.v * self.v * dt) / (self.v * np.sqrt(dt))
             R2a = np.exp(-0.5 * self.v * self.v * dt - self.v * np.sqrt(dt) * Z)

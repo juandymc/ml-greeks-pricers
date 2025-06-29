@@ -31,7 +31,7 @@ def plot(title, pred, ana, x, y, sizes, ylabel):
 
 
 if __name__ == "__main__":
-    sizes = [1024, 8192]
+    sizes = [1024, 80192]
     n_test = 100
     seed = 6233#np.random.randint(1e4)
     print(f"seed {seed}")
@@ -39,8 +39,8 @@ if __name__ == "__main__":
     # Use an even number of paths and steps when antithetic sampling is enabled
     # (default behaviour).  ``dt=0.5`` ensures that ``n_steps`` is even for
     # ``T=1.0``.
-    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
-    gen = MCEuropeanOption(market, asset)
+    #asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
+    gen = MCEuropeanOption(market, S0 = 1.0, q = 0.0, factor = 260, T1 = 1.0 )
     x, y, dy, vp, dp = run_test(gen, sizes, n_test, seed)
 
     T = gen.T2 - gen.T1
@@ -52,7 +52,7 @@ if __name__ == "__main__":
         T,
         0.0,
         market.r,
-        asset.q,
+        0.0,
         market._flat_sigma,
         is_call=True,
     )
