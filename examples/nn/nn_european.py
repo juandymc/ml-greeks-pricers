@@ -2,6 +2,8 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
+from pathlib import Path
 import tensorflow as tf
 
 from ml_greeks_pricers.nn import MCEuropeanOption, run_test
@@ -10,6 +12,7 @@ from ml_greeks_pricers.pricers.tf.european import (
     EuropeanAsset,
     AnalyticalEuropeanOption,
 )
+from ml_greeks_pricers.volatility.discrete import DupireLocalVol
 
 
 def plot(title, pred, ana, x, y, sizes, ylabel):
@@ -33,15 +36,26 @@ def plot(title, pred, ana, x, y, sizes, ylabel):
 if __name__ == "__main__":
     sizes = [1024, 80192]
     n_test = 100
-    seed = 6233#np.random.randint(1e4)
+    seed = 6233  # np.random.randint(1e4)
     print(f"seed {seed}")
-    market = MarketData(0.0, 0.202)
-    # Use an even number of paths and steps when antithetic sampling is enabled
-    # (default behaviour).  ``dt=0.5`` ensures that ``n_steps`` is even for
-    # ``T=1.0``.
-    #asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
-    gen = MCEuropeanOption(market, S0 = 1.0, q = 0.0, factor = 260, T1 = 1.0 )
-    x, y, dy, vp, dp = run_test(gen, sizes, n_test, seed)
+
+    inputs_dir = Path(__file__).resolve().parents[1] / "inputs"
+    iv_df = pd.read_csv(inputs_dir / "nn_implied_vol_surface.csv", index_col=0)
+
+    strikes = [float(c) for c in iv_df.columns]
+    mats = [float(i) for i in iv_df.index]
+    iv = iv_df.values.tolist()
+
+    flat_sigma = float(iv_df.loc[1.0, "1.10"])
+
+    market_flat = MarketData(0.0, flat_sigma)
+    dupire = DupireLocalVol(strikes, mats, iv, 1.0, 0.0, 0.0)
+    market_dup = MarketData(0.0, dupire)
+
+    gen = MCEuropeanOption(market_flat, S0=1.0, q=0.0, factor=260, T1=1.0)
+
+    x, y, dy, vp_flat, dp_flat = run_test(gen, sizes, n_test, seed)
+    _, _, _, vp_dup, dp_dup = run_test(gen, sizes, n_test, seed, market=market_dup)
 
     T = gen.T2 - gen.T1
     # ``run_test`` returns float32 arrays, while the analytical pricer uses
@@ -51,13 +65,15 @@ if __name__ == "__main__":
         gen.K,
         T,
         0.0,
-        market.r,
+        market_flat.r,
         0.0,
-        market._flat_sigma,
+        market_flat._flat_sigma,
         is_call=True,
     )
     v_ana = ana.price().numpy().reshape(-1, 1)
     d_ana = ana.delta().numpy().reshape(-1, 1)
 
-    plot("Black-Scholes values", vp, v_ana[:, 0], x, y, sizes, "value")
-    plot("Black-Scholes deltas", dp, d_ana[:, 0], x, dy, sizes, "delta")
+    plot("Flat volatility values", vp_flat, v_ana[:, 0], x, y, sizes, "value")
+    plot("Dupire volatility values", vp_dup, v_ana[:, 0], x, y, sizes, "value")
+    plot("Flat volatility deltas", dp_flat, d_ana[:, 0], x, dy, sizes, "delta")
+    plot("Dupire volatility deltas", dp_dup, d_ana[:, 0], x, dy, sizes, "delta")
