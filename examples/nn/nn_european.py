@@ -35,7 +35,7 @@ if __name__ == "__main__":
     n_test = 100
     seed = 6233#np.random.randint(1e4)
     print(f"seed {seed}")
-    market = MarketData(0.0, 0.2)
+    market = MarketData(0.0, 0.202)
     # Use an even number of paths and steps when antithetic sampling is enabled
     # (default behaviour).  ``dt=0.5`` ensures that ``n_steps`` is even for
     # ``T=1.0``.
