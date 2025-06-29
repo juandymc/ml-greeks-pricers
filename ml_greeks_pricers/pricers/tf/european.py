@@ -2,6 +2,7 @@ import tensorflow as tf
 tf.keras.backend.set_floatx('float64')
 
 from ml_greeks_pricers.volatility.discrete import ImpliedVolSurface, DupireLocalVol
+from collections.abc import Sequence
 from ml_greeks_pricers.common.constants import USE_XLA
 
 class AnalyticalEuropeanOption:
@@ -134,6 +135,7 @@ class MarketData:
         self.dtype = dtype
 
         self._flat_sigma = None
+        self._vector_sigma = None
         self._dupire_grid = None
         self._sigma_fn = self._build_sigma_fn(vol_model)
 
@@ -147,6 +149,19 @@ class MarketData:
 
             return const_sigma
 
+        if isinstance(vm, Sequence) and all(isinstance(v, (float, int)) for v in vm):
+            self._vector_sigma = tf.Variable(list(vm), dtype=self.dtype, trainable=True)
+
+            @tf.function(reduce_retracing=True)
+            def vector_sigma(x):
+                n_assets = tf.size(self._vector_sigma)
+                n_rows = tf.shape(x)[0]
+                n_paths = n_rows // n_assets
+                tiled = tf.broadcast_to(self._vector_sigma, [n_paths, n_assets])
+                return tf.reshape(tiled, [-1])
+
+            return vector_sigma
+
         if hasattr(vm, "surface") and hasattr(vm, "strikes"):
             self._dupire_grid = tf.Variable(vm.surface, dtype=self.dtype, trainable=True)
             strikes, mats = vm.strikes, vm.maturities
@@ -159,7 +174,7 @@ class MarketData:
 
             return local_sigma
 
-        raise TypeError("vol_model must be float/int or DupireLocalVol")
+        raise TypeError("vol_model must be float/int, sequence of floats or DupireLocalVol")
 
     def discount_factor(self, T):
         T = tf.cast(T, self.dtype)
@@ -331,6 +346,8 @@ class MCEuropeanOption:
             tape.watch(self.asset.S0)
             if self.market._flat_sigma is not None:
                 tape.watch(self.market._flat_sigma)
+            elif self.market._vector_sigma is not None:
+                tape.watch(self.market._vector_sigma)
             elif self.market._dupire_grid is not None:
                 tape.watch(self.market._dupire_grid)
 
@@ -351,6 +368,10 @@ class MCEuropeanOption:
             vega = tape.gradient(price, self.market._flat_sigma)
             if vega is None:
                 vega = tf.zeros_like(price)
+        elif self.market._vector_sigma is not None:
+            vega = tape.gradient(price, self.market._vector_sigma)
+            if vega is None:
+                vega = tf.zeros_like(self.market._vector_sigma)
         else:
             grid_grad = tape.gradient(price, self.market._dupire_grid)
             if grid_grad is None:

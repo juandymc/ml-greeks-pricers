@@ -106,6 +106,8 @@ class MCAmericanOption:
             tape.watch(self.asset.S0)
             if self.market._flat_sigma is not None:
                 tape.watch(self.market._flat_sigma)
+            elif self.market._vector_sigma is not None:
+                tape.watch(self.market._vector_sigma)
             elif self.market._dupire_grid is not None:
                 tape.watch(self.market._dupire_grid)
 
@@ -151,6 +153,10 @@ class MCAmericanOption:
             vega = tape.gradient(price, self.market._flat_sigma)
             if vega is None:
                 vega = tf.zeros_like(self.market._flat_sigma)
+        elif self.market._vector_sigma is not None:
+            vega = tape.gradient(price, self.market._vector_sigma)
+            if vega is None:
+                vega = tf.zeros_like(self.market._vector_sigma)
         else:
             grid_grad = tape.gradient(price, self.market._dupire_grid)
             if grid_grad is None:
