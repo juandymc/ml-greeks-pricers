@@ -60,9 +60,31 @@ class MCEuropeanOption:
         self.T2 = T2
         self.K = K
 
-    def training_set(self, m: int, anti: bool = True, seed: int | None = None):
-        """Generate a training set using :class:`EuropeanAsset`."""
+    def training_set(
+        self,
+        m: int,
+        anti: bool = True,
+        seed: int | None = None,
+        market: MarketData | None = None,
+    ):
+        """Generate a training set using :class:`EuropeanAsset`.
 
+        Parameters
+        ----------
+        m : int
+            Number of simulated paths.
+        anti : bool, default True
+            Whether to use antithetic sampling.  This is only applied when the
+            generator was initialised with a flat volatility market.
+        seed : int or None, optional
+            Seed for NumPy's random number generator.
+        market : MarketData or None, optional
+            Alternative market data to use for the simulation.  When ``None``
+            (default) the market passed at construction time is used.  This
+            allows, for instance, simulating paths with a Dupire local-volatility
+            model while keeping the flat-volatility market for analytical
+            evaluations.
+        """
         np.random.seed(seed)
         r = np.random.normal(size=(m, 2))
         dt = self.T2 / self.T1 / self.factor
@@ -76,9 +98,10 @@ class MCEuropeanOption:
             seed=0 if seed is None else seed,
             use_scan=True,
         )
+        sim_market = self.market if market is None else market
 
         S2 = (
-            asset.simulate(self.T2, self.market, use_cache=True, save_path=True)
+            asset.simulate(self.T2, sim_market, use_cache=True, save_path=True)
             .numpy()
             .ravel()
         )
@@ -171,8 +194,16 @@ class NeuralApproximator:
 # ---- experiment -------------------------------------------------------------
 
 
-def run_test(gen: MCEuropeanOption, sizes, n_test: int, seed: int):
-    x_tr, y_tr, dy_tr = gen.training_set(max(sizes), seed=seed)
+def run_test(
+    gen: MCEuropeanOption,
+    sizes,
+    n_test: int,
+    seed: int,
+    market: MarketData | None = None,
+):
+    """Utility routine used in the examples to train and evaluate a model."""
+
+    x_tr, y_tr, dy_tr = gen.training_set(max(sizes), seed=seed, market=market)
     x_te, x_ax, y_te, dy_te, _ = gen.test_set(n=n_test)
     reg = NeuralApproximator(x_tr, y_tr, dy_tr)
     v_pred, d_pred = {}, {}
