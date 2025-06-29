@@ -12,6 +12,7 @@ from ..pricers.tf.european import MarketData, EuropeanAsset
 
 # ---- analytical formulas ----------------------------------------------------
 
+
 def bs_price(s, k, v, T):
     d1 = (np.log(s / k) + 0.5 * v * v * T) / (v * np.sqrt(T))
     d2 = d1 - v * np.sqrt(T)
@@ -30,14 +31,17 @@ def bs_vega(s, k, v, T):
 
 # ---- data generator ---------------------------------------------------------
 
+
 class MCEuropeanOption:
     """Simple Monte Carlo generator for European options."""
 
     def __init__(
         self,
         market: MarketData,
-        asset: EuropeanAsset,
         *,
+        S0: float,
+        q: float,
+        factor: int = 8,
         T1: float = 1.0,
         T2: float = 2.0,
         K: float = 1.1,
@@ -47,11 +51,10 @@ class MCEuropeanOption:
             raise ValueError("Only flat volatility supported")
 
         self.market = market
-        self.asset = asset
 
-        self.s0 = float(asset.S0.numpy())
-        self.q = float(asset.q.numpy())
-        self.dt = float(asset.dt.numpy())
+        self.s0 = float(S0)
+        self.q = float(q)
+        self.factor = factor
 
         self.v = float(market._flat_sigma.numpy())
         self.T1 = T1
@@ -64,7 +67,7 @@ class MCEuropeanOption:
 
         np.random.seed(seed)
         r = np.random.normal(size=(m, 2))
-        dt = self.T2/self.T1/8
+        dt = self.T2 / self.T1 / self.factor
         asset = EuropeanAsset(
             self.s0,
             self.q,
@@ -76,9 +79,13 @@ class MCEuropeanOption:
             use_scan=True,
         )
 
-        S2 = asset.simulate(self.T2, self.market, use_cache=True, save_path=True).numpy().ravel()
-        S1 = asset.path[int(self.T1/dt)-1].numpy().ravel()
-        
+        S2 = (
+            asset.simulate(self.T2, self.market, use_cache=True, save_path=True)
+            .numpy()
+            .ravel()
+        )
+        S1 = asset.path[int(self.T1 / dt) - 1].numpy().ravel()
+
         dt = self.T2 - self.T1
         pay = np.maximum(0.0, S2 - self.K)
         R2 = S2 / S1
@@ -116,6 +123,7 @@ class MCEuropeanOption:
 
 # ---- approximator -----------------------------------------------------------
 
+
 class NeuralApproximator:
     def __init__(self, x, y, dy=None):
         self.x_raw, self.y_raw = x, y
@@ -148,7 +156,13 @@ class NeuralApproximator:
             loss=["mse", WeightedMeanSquaredError(self.lam_j)],
             loss_weights=self.loss_w,
         )
-        self.twin.fit(ds, epochs=epochs, steps_per_epoch=steps, callbacks=[lr_callback(lr_sched, epochs)], verbose=0)
+        self.twin.fit(
+            ds,
+            epochs=epochs,
+            steps_per_epoch=steps,
+            callbacks=[lr_callback(lr_sched, epochs)],
+            verbose=0,
+        )
 
     def predict(self, x):
         x_s = self.scaler.x_transform(x)
@@ -157,6 +171,7 @@ class NeuralApproximator:
 
 
 # ---- experiment -------------------------------------------------------------
+
 
 def run_test(gen: MCEuropeanOption, sizes, n_test: int, seed: int):
     x_tr, y_tr, dy_tr = gen.training_set(max(sizes), seed=seed)

@@ -18,22 +18,20 @@ def test_bs_functions():
 
 def test_training_set_reproducible():
     market = MarketData(0.0, 0.2)
-    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
-    gen = MCEuropeanOption(market, asset)
+    gen = MCEuropeanOption(market, S0=1.0, q=0.0)
     x, y, dy = gen.training_set(3, seed=0)
     assert x.shape == (3, 1)
     assert y.shape == (3, 1)
     assert dy.shape == (3, 1)
-    assert np.isclose(x[0, 0], 1.3948829)
-    assert np.isclose(y[0, 0], 0.27164337)
-    assert np.isclose(dy[0, 0], 0.9833394)
+    assert np.isclose(x[0, 0], 1.0542126)
+    assert np.isclose(y[0, 0], 0.3368888)
+    assert np.isclose(dy[0, 0], 0.8412808)
 
 
 def test_neural_approximator_shapes():
     tf.keras.backend.set_floatx("float32")
     market = MarketData(0.0, 0.2)
-    asset = EuropeanAsset(1.0, 0.0, T=1.0, dt=0.5, n_paths=2)
-    gen = MCEuropeanOption(market, asset)
+    gen = MCEuropeanOption(market, S0=1.0, q=0.0)
     x, y, dy = gen.training_set(20, seed=1)
     na = NeuralApproximator(x, y, dy)
     na.prepare(10, diff=False, hu=2, hl=1)
