@@ -17,13 +17,13 @@ def price_option(pricer):
 def main():
     # To keep the example runtime reasonable we use a reduced number of paths
     # and training epochs compared to the original values.
-    nb_paths = 4000
+    nb_paths = 10_000
     nb_dates = 50
-    strike = 100
-    spot = 100
-    drift = 0.05
-    volatility = 0.2
-    maturity = 1
+    strike   = 100
+    spot     = 120
+    drift    = 0
+    volatility = 0.02
+    maturity   = 1
 
     configs.path_gen_seed.set_seed(0)
     np.random.seed(0)
@@ -55,8 +55,8 @@ def main():
     nlsm_pricer_tf = NeuralNetworkPricerTF(
         model_tf,
         payoff,
-        nb_epochs=50,
-        hidden_size=32,
+        nb_epochs=150,
+        hidden_size=20,
     )
     price_nlsm_tf = price_option(nlsm_pricer_tf)
 
