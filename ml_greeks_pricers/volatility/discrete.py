@@ -1,4 +1,3 @@
-from ml_greeks_pricers.pricers.tf.black_utils import bs_price
 from ml_greeks_pricers.common.constants import USE_XLA
 
 import tensorflow as tf
@@ -166,6 +165,7 @@ class DupireLocalVol(ImpliedVolSurface):
         if self.backend == "ql":
             return self._compute_surface_ql()   # ← usa QuantLib y termina
         else:
+            from ml_greeks_pricers.pricers.tf.black_utils import bs_price
             strikes, mats, iv = self.strikes, self.maturities, self.grid
             S0, r, q          = self.S0, self.r, self.q
         
